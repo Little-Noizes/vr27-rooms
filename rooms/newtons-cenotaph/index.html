@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Newton's Cenotaph · E-LAB VR27</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Preview viewer for the VR27 Newtons_Cenotaph package: same lightmap handling as the VR27 engine viewer
+   (TEXCOORD_1 lightmap, intensity = pi * scale, diffuse from the bake only, specular from env_plinth.hdr). */
+:root { --bg:#07090b; --panel:rgba(14,18,21,.82); --fg:#e6ecef; --muted:#93a3ab; --line:rgba(230,236,239,.14); --accent:#9cc7e0; --accent-fg:#081014;
+  --font-ui:"Instrument Sans","Segoe UI",system-ui,sans-serif; --font-data:"IBM Plex Mono",ui-monospace,Menlo,monospace; color-scheme:dark; }
+:root[data-theme="light"] { --bg:#07090b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#07090b; } }
+:root[data-theme="dark"] { --bg:#07090b; }
+[hidden] { display:none !important; }
+html,body { height:100%; margin:0; } body { background:var(--bg); color:var(--fg); font-family:var(--font-ui); overflow:hidden; }
+#stage { position:fixed; inset:0; } #stage canvas { display:block; width:100%; height:100%; touch-action:none; cursor:grab; }
+.panel { position:fixed; background:var(--panel); border:1px solid var(--line); border-radius:10px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+#readout { top:calc(16px + env(safe-area-inset-top,0px)); left:calc(16px + env(safe-area-inset-left,0px)); padding:10px 14px; max-width:calc(100% - 64px); display:grid; gap:2px; }
+#readout h1 { font-size:15px; font-weight:600; margin:0; } #readout .sub { font-size:12px; color:var(--muted); max-width:46ch; }
+#pos { font-family:var(--font-data); font-size:12px; font-variant-numeric:tabular-nums; margin-top:4px; } #pos b { font-weight:500; color:var(--accent); }
+#controls { left:calc(16px + env(safe-area-inset-left,0px)); bottom:calc(16px + env(safe-area-inset-bottom,0px)); padding:10px 12px; width:min(320px, calc(100% - 32px)); display:grid; gap:10px; }
+.label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.row { display:flex; flex-wrap:wrap; gap:6px; }
+button { font:500 12px/1 var(--font-ui); color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:6px; padding:7px 9px; cursor:pointer; }
+button:hover { border-color:var(--accent); } button[aria-pressed="true"] { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+button:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.slider { display:grid; grid-template-columns:auto 1fr auto; gap:8px; align-items:center; font-size:12px; }
+.slider output { font-family:var(--font-data); min-width:4ch; text-align:right; } input[type=range] { width:100%; accent-color:var(--accent); }
+.hint { font-size:12px; color:var(--muted); line-height:1.4; }
+#status { position:fixed; inset:0; display:grid; place-items:center; font-size:14px; color:var(--muted); pointer-events:none; text-align:center; padding:16px; }
+@media (max-width:520px) { .hint { display:none; } }
+</style>
+<script src="../../shared/nav.js" defer></script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="status">Loading the cenotaph…</div>
+<div class="panel" id="readout">
+  <h1 id="title">Newton's Cenotaph</h1>
+  <div class="sub" id="subtitle">Boullée, 1784. Day effect: daylight through the vault draws the sky over Kensington on the night Newton died.</div>
+  <div id="pos">x <b>–</b> y <b>–</b> z <b>–</b> m</div>
+</div>
+<div class="panel" id="controls">
+  <div><div class="label">Viewpoint</div><div class="row" id="views"></div></div>
+  <label class="slider" for="ev"><span>Exposure</span><input type="range" id="ev" min="-3" max="3" step="0.1" value="0"><output id="evOut" for="ev">0.0</output></label>
+  <div class="hint">Drag to look, W A S D or arrows to walk. Stars are open bores aimed at the sarcophagus: they dim as you walk away from it.</div>
+</div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+const status = document.getElementById("status");
+const acToThree = (x, y, z) => new THREE.Vector3(x, z, -y);
+const threeToAc = (v) => ({ x: v.x, y: -v.z, z: v.y });
+const cfg = await (await fetch("scene.json", { cache: "no-store" })).json();
+const V = cfg.version ? `?v=${cfg.version}` : "";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.AgXToneMapping;
+document.getElementById("stage").appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, cfg.camera_far ?? 400);
+const rig = new THREE.Group(); rig.add(camera); scene.add(rig);
+const EYE = cfg.floor?.eye_height ?? 1.6;
+
+let gltf, lightTex, envTex;
+try {
+  const [buf, hdr, lt] = await Promise.all([
+    fetch(cfg.model + V).then((r) => { if (!r.ok) throw new Error(`${cfg.model} ${r.status}`); return r.arrayBuffer(); }),
+    fetch(cfg.environment + V).then((r) => r.arrayBuffer()),
+    new THREE.TextureLoader().loadAsync(cfg.lightmap.file + V)]);
+  gltf = await new GLTFLoader().parseAsync(buf, "");
+  const e = new RGBELoader().parse(hdr);
+  envTex = new THREE.DataTexture(e.data, e.width, e.height, THREE.RGBAFormat, e.type);
+  envTex.colorSpace = THREE.LinearSRGBColorSpace; envTex.minFilter = envTex.magFilter = THREE.LinearFilter; envTex.flipY = true; envTex.needsUpdate = true;
+  lightTex = lt;
+} catch (err) { status.textContent = `The model failed to load: ${err.message}`; throw err; }
+lightTex.colorSpace = THREE.SRGBColorSpace; lightTex.flipY = false; lightTex.channel = 1; lightTex.anisotropy = 8;
+envTex.mapping = THREE.EquirectangularReflectionMapping;
+const envMap = new THREE.PMREMGenerator(renderer).fromEquirectangular(envTex).texture;
+const LM = Math.PI * cfg.lightmap.scale;
+function specularOnlyEnv(mat) {   // diffuse comes from the lightmap only (as in the VR27 engine)
+  mat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace("#include <lights_fragment_maps>",
+    THREE.ShaderChunk.lights_fragment_maps.replace("iblIrradiance += getIBLIrradiance( geometryNormal );", "")); };
+}
+const floorMeshes = [];
+gltf.scene.traverse((o) => {
+  if (!o.isMesh) return;
+  const m = o.material;
+  if (m.name === "V_SKYCAP") { m.emissiveIntensity = cfg.skycap_gain ?? 1; return; }
+  if (o.geometry.attributes.uv1) { m.lightMap = lightTex; m.lightMapIntensity = LM; }
+  m.envMap = envMap; m.envMapIntensity = cfg.env_intensity ?? 1; specularOnlyEnv(m); m.needsUpdate = true;
+  if ((cfg.floor?.materials ?? []).includes(m.name)) floorMeshes.push(o);
+});
+scene.add(gltf.scene);
+status.hidden = true;
+
+const down = new THREE.Raycaster(); down.far = 20;
+function floorAt(x, z, fromY) {
+  down.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0, -1, 0));
+  const h = down.intersectObjects(floorMeshes, false)[0]; return h ? h.point.y : null;
+}
+let yaw = 0, pitch = 0;
+const applyLook = () => camera.rotation.set(pitch, yaw, 0, "YXZ");
+function setView(k) {
+  const v = cfg.views[k], p = acToThree(v.pos[0], v.pos[1], 0);
+  const fy = floorAt(p.x, p.z, 3); if (fy !== null) p.y = fy;
+  rig.position.copy(p); camera.position.set(0, EYE, 0);
+  const t = acToThree(...v.target), dx = t.x - p.x, dz = t.z - p.z, dy = t.y - (p.y + EYE);
+  yaw = Math.atan2(-dx, -dz); pitch = Math.atan2(dy, Math.hypot(dx, dz)); applyLook();
+  document.querySelectorAll("#views button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === k)));
+}
+for (const k of Object.keys(cfg.views)) {
+  const b = document.createElement("button"); b.type = "button"; b.dataset.view = k; b.textContent = cfg.views[k].label ?? k;
+  b.addEventListener("click", () => setView(k)); document.getElementById("views").appendChild(b);
+}
+const ev = document.getElementById("ev"), evOut = document.getElementById("evOut");
+function setExposure() { renderer.toneMappingExposure = 2 ** (parseFloat(ev.value) + (cfg.exposure_ev ?? 0)); evOut.value = (ev.value >= 0 ? "+" : "") + parseFloat(ev.value).toFixed(1); }
+ev.addEventListener("input", setExposure); setExposure();
+const qs = new URLSearchParams(location.search);
+setView(qs.get("view") ?? cfg.default_view ?? Object.keys(cfg.views)[0]);
+if (qs.get("ev")) { ev.value = qs.get("ev"); setExposure(); }
+
+const el = renderer.domElement; let drag = false, lx = 0, ly = 0;
+el.addEventListener("pointerdown", (e) => { drag = true; lx = e.clientX; ly = e.clientY; el.setPointerCapture(e.pointerId); });
+el.addEventListener("pointerup", () => (drag = false));
+el.addEventListener("pointermove", (e) => { if (!drag) return; yaw += (e.clientX - lx) * 0.004; pitch = Math.max(-1.5, Math.min(1.5, pitch + (e.clientY - ly) * 0.004)); lx = e.clientX; ly = e.clientY; applyLook(); });
+const keys = new Set(); addEventListener("keydown", (e) => keys.add(e.key.toLowerCase())); addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+const RW = cfg.walk_radius ?? 22;
+function clampRig() {
+  const a = threeToAc(rig.position), r = Math.hypot(a.x, a.y);
+  if (r > RW) { a.x *= RW / r; a.y *= RW / r; }
+  const p = acToThree(a.x, a.y, 0); rig.position.x = p.x; rig.position.z = p.z;
+  const fy = floorAt(p.x, p.z, rig.position.y + 1.0); if (fy !== null) rig.position.y += (fy - rig.position.y) * 0.35;
+}
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); composer?.setSize(innerWidth, innerHeight); }
+let composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), cfg.bloom?.strength ?? 0.5, cfg.bloom?.radius ?? 0.5, cfg.bloom?.threshold ?? 0.85));
+composer.addPass(new OutputPass());
+addEventListener("resize", resize); resize();
+const posEl = document.getElementById("pos"), clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const f = (keys.has("w") || keys.has("arrowup")) - (keys.has("s") || keys.has("arrowdown"));
+  const s = (keys.has("d") || keys.has("arrowright")) - (keys.has("a") || keys.has("arrowleft"));
+  const sp = (keys.has("shift") ? 6 : 2.2) * dt;
+  rig.position.x += (-Math.sin(yaw) * f + Math.cos(yaw) * s) * sp; rig.position.z += (-Math.cos(yaw) * f - Math.sin(yaw) * s) * sp;
+  clampRig();
+  const w = new THREE.Vector3(); camera.getWorldPosition(w); const a = threeToAc(w);
+  posEl.innerHTML = `x <b>${a.x.toFixed(2)}</b> y <b>${a.y.toFixed(2)}</b> z <b>${a.z.toFixed(2)}</b> m`;
+  composer.render();
+});
+window.__ready = true;
+</script>
+</body>
+</html>

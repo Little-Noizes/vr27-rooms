@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Great Hall · E-LAB VR27</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* VR27 visual viewer v0.1 (no audio yet). Reads scene.json from the same folder.
+   Layout: full-bleed WebGL room; one compact instrument panel bottom-left, readout top-left. */
+:root {
+  --bg: #e9ecee;
+  --panel: rgba(250, 251, 251, 0.86);
+  --fg: #1d2428;
+  --muted: #5d6a71;
+  --line: rgba(29, 36, 40, 0.14);
+  --accent: #2f6f8f;
+  --accent-fg: #ffffff;
+  --font-ui: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101416; --panel: rgba(20, 26, 29, 0.84); --fg: #e6ecef; --muted: #93a3ab;
+    --line: rgba(230, 236, 239, 0.14); --accent: #6fb3d2; --accent-fg: #0c1214; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101416; --panel: rgba(20, 26, 29, 0.84); --fg: #e6ecef; --muted: #93a3ab;
+  --line: rgba(230, 236, 239, 0.14); --accent: #6fb3d2; --accent-fg: #0c1214; color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); overflow: hidden; }
+#stage { position: fixed; inset: 0; }
+#stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+#stage canvas:active { cursor: grabbing; }
+.panel {
+  position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+#readout {
+  top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px; padding: 10px 14px;
+  display: grid; gap: 2px; max-width: calc(100% - 32px);
+}
+#readout h1 { font-size: 15px; font-weight: 600; margin: 0; text-wrap: balance; }
+#readout .sub { font-size: 12px; color: var(--muted); }
+#pos { font-family: var(--font-data); font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 4px; }
+#pos b { font-weight: 500; color: var(--accent); }
+#controls {
+  left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); padding: 10px 12px;
+  width: min(300px, calc(100% - 32px));
+}
+#controls summary { cursor: pointer; font-size: 13px; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+#controls summary::after { content: "Hide"; font-weight: 500; color: var(--muted); font-size: 12px; }
+#controls:not([open]) summary::after { content: "Show"; }
+#controls summary::-webkit-details-marker { display: none; }
+#controls .inner { display: grid; gap: 10px; margin-top: 10px; }
+.label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+button, .toggle {
+  font: 500 12px/1 var(--font-ui); color: var(--fg); background: transparent;
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; cursor: pointer;
+}
+button:hover, .toggle:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+#vr { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+#vr[disabled] { background: transparent; color: var(--muted); border-color: var(--line); cursor: default; }
+.slider { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 12px; }
+.slider output { font-family: var(--font-data); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: right; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+#legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; font-size: 12px; }
+#legend span { display: flex; gap: 6px; align-items: center; min-width: 0; }
+#legend i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.hint { font-size: 12px; color: var(--muted); line-height: 1.4; }
+#audio[hidden] { display: none; }
+#hear { font-family: var(--font-data); font-size: 12px; font-variant-numeric: tabular-nums; }
+#hear b { font-weight: 500; color: var(--accent); }
+#aStatus { font-size: 12px; color: var(--muted); min-height: 1.2em; }
+.check { display: flex; gap: 6px; align-items: center; font-size: 12px; cursor: pointer; }
+.check input { accent-color: var(--accent); margin: 0; }
+#lap {
+  top: calc(16px + env(safe-area-inset-top, 0px)); right: 16px; padding: 10px 12px;
+  max-width: calc(100% - 32px); font-size: 12px; display: grid; gap: 6px;
+}
+#lap h2 { font-size: 13px; font-weight: 600; margin: 0; display: flex; justify-content: space-between; gap: 12px; }
+#lap h2 span { font-weight: 400; color: var(--muted); font-size: 11px; }
+#lap table { border-collapse: collapse; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+#lap th, #lap td { padding: 2px 6px; text-align: right; white-space: nowrap; }
+#lap th { font-weight: 500; color: var(--muted); font-family: var(--font-ui); font-size: 11px; }
+#lap th:first-child, #lap td:first-child { text-align: left; padding-left: 0; }
+#lap td.mid { color: var(--accent); font-weight: 500; }
+#lap td.na { color: var(--muted); }
+#lapNote { color: var(--muted); font-size: 11px; max-width: 46ch; line-height: 1.35; }
+@media (max-width: 520px) { #lap { top: auto; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); } }
+#status {
+  position: fixed; inset: 0; display: grid; place-items: center; font-size: 14px; color: var(--muted);
+  pointer-events: none;
+}
+@media (max-width: 520px) {
+  #controls:not([open]) { width: auto; }
+  .hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<script src="../../shared/nav.js" defer></script>
+</head>
+<body>
+
+<div id="stage"></div>
+<div id="status">Loading room model…</div>
+
+<div class="panel" id="readout">
+  <h1 id="title">VR27</h1>
+  <div class="sub" id="subtitle">Baked daylight · walk to hear the room change</div>
+  <div id="pos">x <b>–</b> y <b>–</b> z <b>–</b> m</div>
+  <div id="hear" hidden>Hearing seat <b>–</b></div>
+</div>
+
+<div class="panel" id="lap" hidden aria-live="off">
+  <h2>Live acoustic parameters <span id="lapSrc"></span></h2>
+  <table id="lapTable"></table>
+  <div id="lapNote"></div>
+</div>
+
+<details class="panel" id="controls" open>
+  <summary>View controls</summary>
+  <div class="inner">
+  <div id="audio" hidden>
+    <div class="label">Listening</div>
+    <div class="row">
+      <button type="button" id="aPlay">Play</button>
+      <button type="button" id="aRoom" aria-pressed="true">Room</button>
+      <button type="button" id="aDry" aria-pressed="false">Dry</button>
+    </div>
+    <div class="label" style="margin-top: 8px">Walking</div>
+    <div class="row" id="aBlend">
+      <button type="button" data-blend="nearest" aria-pressed="false" title="Case A: the nearest measured seat, switched as you walk">Nearest seat</button>
+      <button type="button" data-blend="paper" aria-pressed="true" title="Case B as published: the 4 IRs around you, mixed with bilinear amplitude weights">4-IR blend</button>
+      <button type="button" data-blend="aligned" aria-pressed="false" title="Case B improved: the 4 IRs time-aligned to your position, reverb mixed by energy">4-IR aligned</button>
+    </div>
+    <label class="slider" for="aVol" style="margin-top: 8px"><span>Level</span>
+      <input type="range" id="aVol" min="-30" max="12" step="1" value="0">
+      <output id="aVolOut" for="aVol">0 dB</output></label>
+    <div class="row" id="lapRow" hidden style="margin-top: 4px">
+      <label class="check" title="Live Acoustic Parameters: T20, T30, EDT, C50, C80, D50, D80 from the IRs at your position"><input type="checkbox" id="aLap"> LAP</label>
+      <label class="check" title="Show every octave band, not only the 500 Hz / 1 kHz average"><input type="checkbox" id="aLapBands"> All bands</label>
+    </div>
+    <div id="aStatus" role="status" aria-live="polite"></div>
+  </div>
+  <div>
+    <div class="label">Viewpoint</div>
+    <div class="row" id="views"></div>
+  </div>
+  <div>
+    <div class="label">Layers</div>
+    <div class="row">
+      <button type="button" id="t-acoustic" aria-pressed="false">Acoustic surfaces</button>
+      <button type="button" id="t-axes" aria-pressed="false">Acoustic axes</button>
+      <button type="button" id="t-furniture" aria-pressed="true">Furniture</button>
+      <button type="button" id="t-seats" aria-pressed="true" hidden>Seats</button>
+      <span id="extraToggles" style="display: contents"></span>
+    </div>
+  </div>
+  <div id="legend" hidden></div>
+  <label class="slider" for="ev"><span>Exposure</span>
+    <input type="range" id="ev" min="-2" max="2" step="0.1" value="0">
+    <output id="ev-out" for="ev">0.0</output></label>
+  <div class="row">
+    <button type="button" id="vr" disabled>VR not available</button>
+  </div>
+  <div class="hint">Drag to look. W A S D or arrow keys to walk. Click a seat marker to stand there. In a headset: left stick moves, right stick turns. Use headphones.</div>
+  </div>
+</details>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { SeatAudio } from "./vr27audio.js";
+import { LapData, PARAMS, fmt, makeLapPanel } from "./lap.js";
+
+const SCENE_URL = "scene.json";
+const status = document.getElementById("status");
+
+// Acoustic frame (manifest / Treble / CATT): x, y horizontal, z up, metres.
+// glTF / three.js frame: y up. Mapping used by the Blender exporter: (x, y, z)ac -> (x, z, -y)three.
+const acToThree = (x, y, z) => new THREE.Vector3(x, z, -y);
+const threeToAc = (v) => ({ x: v.x, y: -v.z, z: v.y });
+
+// TODO (generic): move layer colours/names into scene.json so other rooms work without code edits.
+const LAYER_COLOURS = {
+  FLOOR_LINOLEUM: "#c98a3c", WALLS_PLASTERBOARD: "#8fb4c9", CEILING_PLASTER: "#e5e1d6",
+  WHITEBOARD: "#5b8c5a", DOOR_TIMBER: "#9c5b3b", PLATFORM: "#d7b34a", WINDOW: "#5fa8d3",
+};
+const LAYER_NAMES = {
+  FLOOR_LINOLEUM: "Floor, linoleum", WALLS_PLASTERBOARD: "Walls, plasterboard", CEILING_PLASTER: "Ceiling, plaster",
+  WHITEBOARD: "Whiteboard", DOOR_TIMBER: "Door, timber", PLATFORM: "Platform", WINDOW: "Glazing",
+};
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.AgXToneMapping;
+renderer.xr.enabled = true;
+document.getElementById("stage").appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 100);
+const rig = new THREE.Group(); // moves the viewer (desktop and XR)
+rig.add(camera);
+scene.add(rig);
+
+let yaw = 0, pitch = 0;
+let EYE = 1.6;
+let furnitureMeshes = [], acousticMeshes = [], originalMats = new Map();
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+const cfg = await (await fetch(SCENE_URL, { cache: "no-store" })).json();
+const V = cfg.version ? `?v=${cfg.version}` : "";   // cache-busting: each build has its own version
+if (cfg.audio) EYE = cfg.audio.ear_height ?? 1.5;   // stand at the height the IRs were measured
+if (cfg.title) { document.getElementById("title").textContent = cfg.title; document.title = cfg.title; }
+if (cfg.subtitle) document.getElementById("subtitle").textContent = cfg.subtitle;
+// Optional floor following (raked floors, stages): eye height above the floor found by a downward ray.
+if (cfg.floor) EYE = cfg.floor.eye_height ?? 1.2;
+const useLM = !!cfg.lightmap;   // false: no bake, real-time lights from cfg.lights (preview quality)
+
+// Specular only from the environment: diffuse light comes from the baked lightmap.
+function specularOnlyEnv(mat) {
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace(
+      "#include <lights_fragment_maps>",
+      THREE.ShaderChunk.lights_fragment_maps.replace("iblIrradiance += getIBLIrradiance( geometryNormal );", "")
+    );
+  };
+}
+
+// Binary assets may be shipped raw (.glb/.hdr) or as base64 text (.b64.txt) where a host only serves text types.
+async function loadBuffer(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Could not load ${url} (${res.status})`);
+  if (!url.split("?")[0].endsWith(".b64.txt")) return res.arrayBuffer();
+  const bin = atob((await res.text()).replace(/\s+/g, ""));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+let gltf, lightTex, envTex, skyTex = null, instLightTex = null;   // instLightTex: lightmap shared by instanced meshes (one baked reference per mesh)
+try {
+  const [glbBuf, hdrBuf, lt, ltInst, skyBuf] = await Promise.all([
+    loadBuffer(cfg.model + V), cfg.environment ? loadBuffer(cfg.environment + V) : null,
+    useLM ? new THREE.TextureLoader().loadAsync(cfg.lightmap.file + V) : null,
+    useLM && cfg.lightmap.instanced_file ? new THREE.TextureLoader().loadAsync(cfg.lightmap.instanced_file + V) : null,
+    cfg.sky ? loadBuffer(cfg.sky.file + V) : null]);
+  if (skyBuf) {
+    const sk = new RGBELoader().parse(skyBuf);
+    skyTex = new THREE.DataTexture(sk.data, sk.width, sk.height, THREE.RGBAFormat, sk.type);
+    skyTex.colorSpace = THREE.LinearSRGBColorSpace; skyTex.flipY = false;
+    skyTex.minFilter = skyTex.magFilter = THREE.LinearFilter; skyTex.wrapS = THREE.RepeatWrapping;
+    skyTex.needsUpdate = true;
+  }
+  gltf = await new GLTFLoader().parseAsync(glbBuf, "");
+  if (hdrBuf) {
+    const rgbe = new RGBELoader().parse(hdrBuf);
+    envTex = new THREE.DataTexture(rgbe.data, rgbe.width, rgbe.height, THREE.RGBAFormat, rgbe.type);
+    envTex.colorSpace = THREE.LinearSRGBColorSpace;
+    envTex.minFilter = envTex.magFilter = THREE.LinearFilter;
+    envTex.flipY = true;
+    envTex.needsUpdate = true;
+  }
+  lightTex = lt; instLightTex = ltInst;
+} catch (err) {
+  status.textContent = `The room model failed to load: ${err.message}`;
+  throw err;
+}
+for (const t of [lightTex, instLightTex]) {
+  if (!t) continue;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.flipY = false;
+  t.channel = 1; // second UV set (Blender "Lightmap" layer)
+  t.anisotropy = 4;
+}
+const pmrem = new THREE.PMREMGenerator(renderer);
+let envMap;
+if (envTex) { envTex.mapping = THREE.EquirectangularReflectionMapping; envMap = pmrem.fromEquirectangular(envTex).texture; }
+else envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;   // neutral studio reflections when no HDR is given
+const LM = useLM ? Math.PI * cfg.lightmap.scale : 0;
+
+// Real-time lights (only without a lightmap): positions and targets in acoustic coordinates.
+if (!useLM) {
+  const L = cfg.lights ?? {};
+  const h = L.hemisphere ?? { sky: "#fff1e0", ground: "#2a2018", intensity: 0.9 };
+  scene.add(new THREE.HemisphereLight(h.sky, h.ground, h.intensity));
+  for (const sp of L.spots ?? []) {
+    const s = new THREE.SpotLight(sp.color ?? "#ffe2c0", sp.intensity, sp.distance ?? 60, sp.angle ?? 0.6, sp.penumbra ?? 0.6, sp.decay ?? 1.2);
+    s.position.copy(acToThree(...sp.pos)); s.target.position.copy(acToThree(...sp.target));
+    scene.add(s, s.target);
+  }
+}
+
+// Sky seen through the windows: the same HDRI that lit the bake, drawn with Blender's equirectangular
+// mapping so the sun, trees and horizon sit where the light came from. Blender world = acoustic frame.
+if (skyTex) {
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(60, 48, 24), new THREE.ShaderMaterial({
+    uniforms: { map: { value: skyTex }, gain: { value: cfg.sky.gain ?? 1.0 } },
+    vertexShader: `varying vec3 vDir; void main() { vDir = position;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform sampler2D map; uniform float gain; varying vec3 vDir;
+      void main() {
+        vec3 d = normalize(vec3(vDir.x, -vDir.z, vDir.y));               // three.js -> Blender world
+        float u = 0.5 + atan(d.y, -d.x) / 6.2831853;
+        float v = 0.5 + asin(clamp(d.z, -1.0, 1.0)) / 3.1415927;          // 0 at the bottom of the image
+        gl_FragColor = vec4(texture2D(map, vec2(u, 1.0 - v)).rgb * gain, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    side: THREE.BackSide, depthWrite: false, toneMapped: true }));
+  sky.position.copy(acToThree(4.5, 4.0, 1.5)); sky.renderOrder = -1; sky.name = "SKY";
+  scene.add(sky);
+}
+
+gltf.scene.traverse((o) => {
+  if (!o.isMesh) return;
+  const m = o.material;
+  const name = m.name || "";
+  if (o.name.startsWith("V_backdrop") || name === "V_BACKDROP") {
+    const map = m.emissiveMap || m.map;
+    if (map) map.colorSpace = THREE.SRGBColorSpace;
+    o.material = new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, toneMapped: true });
+    o.material.color.setScalar(cfg.backdrop_gain ?? 2.2);
+    return;
+  }
+  if (name === "WINDOW") {
+    o.material = new THREE.MeshPhysicalMaterial({ color: 0xdfeef2, roughness: 0.03, metalness: 0,
+      transparent: true, opacity: 0.12, envMap, envMapIntensity: 1.0, depthWrite: false, side: THREE.DoubleSide });
+    acousticMeshes.push(o);
+    originalMats.set(o, o.material);
+    return;
+  }
+  if (name === "V_LIGHT") {
+    o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.0, 0.98, 0.94).multiplyScalar(6) });
+    return;
+  }
+  if (useLM && (o.geometry.attributes.uv1 || o.geometry.attributes.uv2)) {
+    m.lightMap = (o.isInstancedMesh && instLightTex) ? instLightTex : lightTex;
+    m.lightMapIntensity = LM;
+  }
+  if (name === "FLOOR_LINOLEUM") m.roughness = 0.62; // with the texture: ~0.34, soft window reflections
+  if (name === "DOOR_TIMBER" || name === "V_DESK_TOP") m.roughness = 0.5;
+  m.envMap = envMap;
+  m.envMapIntensity = cfg.env_intensity ?? 1.0;
+  if (useLM) specularOnlyEnv(m);
+  m.needsUpdate = true;
+  if (LAYER_COLOURS[name]) acousticMeshes.push(o);
+  if (name.startsWith("V_DESK") || name === "V_CHAIR" || name === "V_STEEL") furnitureMeshes.push(o);
+  originalMats.set(o, m);
+});
+scene.add(gltf.scene);
+
+// Optional per-project extras (scene.json): hidden nodes, node toggles, props, floor following.
+for (const n of cfg.hidden_nodes ?? []) { const o = gltf.scene.getObjectByName(n); if (o) o.visible = false; }
+const extraToggles = [];   // [{ button, fn }] bound after bindToggle is defined
+for (const t of cfg.toggles ?? []) {
+  const b = document.createElement("button"); b.type = "button"; b.id = `t-${t.id}`; b.textContent = t.label;
+  b.setAttribute("aria-pressed", String(!!t.default));
+  document.getElementById("extraToggles").appendChild(b);
+  const fn = (on) => { for (const n of t.show ?? []) { const o = gltf.scene.getObjectByName(n); if (o) o.visible = on; }
+                       for (const n of t.hide ?? []) { const o = gltf.scene.getObjectByName(n); if (o) o.visible = !on; } };
+  fn(!!t.default); extraToggles.push({ id: b.id, fn });
+}
+const propLoader = new GLTFLoader();
+await Promise.all((cfg.props ?? []).map(async (p) => {
+  try {
+    const g = await propLoader.parseAsync(await loadBuffer(p.file + V), "");
+    g.scene.position.copy(acToThree(...p.pos)); g.scene.rotation.y = THREE.MathUtils.degToRad(p.yaw_deg ?? 0);
+    g.scene.traverse((o) => { if (o.isMesh) { o.material.envMap = envMap; o.material.envMapIntensity = p.env_intensity ?? cfg.env_intensity ?? 1.0; } });
+    scene.add(g.scene);
+  } catch (err) { console.warn("prop failed", p.file, err); }
+}));
+const floorMeshes = [];
+if (cfg.floor) gltf.scene.traverse((o) => { if (o.isMesh && (cfg.floor.materials ?? []).includes(o.material.name)) floorMeshes.push(o); });
+const downRay = new THREE.Raycaster(); downRay.far = 50;
+function floorAt(x, z, fromY) {   // three.js coordinates; height of the first floor surface below fromY, or null
+  if (!floorMeshes.length) return null;
+  downRay.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0, -1, 0));
+  const hit = downRay.intersectObjects(floorMeshes, false)[0];
+  return hit ? hit.point.y : null;
+}
+const PROBE_TOP = cfg.floor?.probe_top ?? 2.5;   // start height for the first probe (below any balcony)
+if (!acousticMeshes.length) document.getElementById("t-acoustic").hidden = true;
+if (!furnitureMeshes.length) document.getElementById("t-furniture").hidden = true;
+status.hidden = true;
+
+// ---------- audio: seat markers, position-driven IR blending (case A nearest / case B 4-IR), head orientation
+let audio = null, seatMesh = null, seatIndex = [], hearEl = document.getElementById("hear");
+let lapNodes = null, lapBlend = "paper", lapDirty = false;   // LAP state set by showWeights (LAP section below)
+const aStatus = document.getElementById("aStatus");
+async function setupAudio() {
+  if (!cfg.audio) return;
+  let man;
+  try { man = await (await fetch(cfg.audio.manifest + V)).json(); }
+  catch (err) { aStatus.textContent = `No audio: ${err.message}`; document.getElementById("audio").hidden = false; return; }
+  audio = new SeatAudio({ manifest: man, irBase: cfg.audio.ir_base, dryUrl: cfg.audio.dry, irScale: cfg.audio.ir_scale ?? 1, urlSuffix: V });
+  audio.onstatus = (t) => (aStatus.textContent = t);
+  audio.onweights = showWeights;
+  audio.setBlend("paper");
+  // seat markers: flat discs on the floor at every measured position
+  const disc = new THREE.CylinderGeometry(0.07, 0.07, 0.006, 28);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false });
+  seatMesh = new THREE.InstancedMesh(disc, mat, audio.seats.length);
+  const m4 = new THREE.Matrix4();
+  audio.seats.forEach((st, i) => {
+    const mp = acToThree(st.position[0], st.position[1], 0.006);
+    const fy = floorAt(mp.x, mp.z, PROBE_TOP); if (fy !== null) mp.y = fy + 0.006;
+    m4.makeTranslation(mp.x, mp.y, mp.z);
+    seatMesh.setMatrixAt(i, m4); seatMesh.setColorAt(i, new THREE.Color(0x3d4a52)); seatIndex.push(st.id);
+  });
+  seatMesh.instanceColor.needsUpdate = true;
+  scene.add(seatMesh);
+  // loudspeaker (visual only): a small cabinet at the source position, facing the room
+  const sp = audio.source.position, spk = new THREE.Group();
+  if (cfg.source_visual === "none") spk.visible = false;   // e.g. a performer prop stands in for the source
+  // no live lights in this scene: the loudspeaker is lit by the room's environment map
+  const env = { envMap, envMapIntensity: 1.3 };
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.38, 0.24), new THREE.MeshStandardMaterial({ color: 0x3a3f43, roughness: 0.55, ...env }));
+  const cone = new THREE.Mesh(new THREE.CircleGeometry(0.085, 32), new THREE.MeshStandardMaterial({ color: 0x1c1f21, roughness: 0.35, ...env }));
+  cone.position.set(0, -0.03, 0.121); cab.add(cone);
+  const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, sp[2] - 0.19, 12), new THREE.MeshStandardMaterial({ color: 0x9a9ea1, metalness: 0.9, roughness: 0.3, ...env }));
+  stand.position.y = -(sp[2] - 0.19) / 2 - 0.19; cab.add(stand);
+  spk.add(cab); spk.position.copy(acToThree(sp[0], sp[1], sp[2]));
+  spk.rotation.y = Math.PI;   // cabinet front (local +z) faces three.js -z = acoustic +y, i.e. into the room
+  scene.add(spk);
+  document.getElementById("audio").hidden = false;
+  document.getElementById("t-seats").hidden = false;
+  hearEl.hidden = false;
+  aStatus.textContent = `${audio.seats.length} measured seats. Press Play, then walk or click a seat.`;
+  updateListener(true);
+}
+const cGrey = new THREE.Color(0x3d4a52), cOn = new THREE.Color(0x2f9e8f), cTmp = new THREE.Color();
+let lastUi = 0, lastPos = 0;
+function showWeights({ blend, corners, pos }) {   // seat markers glow with their weight; readout lists the mix
+  lapNodes = corners; lapBlend = blend; lapDirty = true;
+  const now = performance.now(); if (now - lastUi < 100) return; lastUi = now;
+  if (seatMesh) {
+    const w = new Map(corners.map((c) => [c.id, c.w]));
+    seatIndex.forEach((sid, i) => seatMesh.setColorAt(i, cTmp.copy(cGrey).lerp(cOn, Math.min(1, (w.get(sid) ?? 0) * (blend === "nearest" ? 1 : 1.6)))));
+    seatMesh.instanceColor.needsUpdate = true;
+  }
+  if (blend === "nearest") {
+    const p = audio.byId.get(corners[0].id).position;
+    hearEl.innerHTML = `Hearing seat <b>${corners[0].id}</b> · ${Math.hypot(p[0] - pos[0], p[1] - pos[1]).toFixed(2)} m away`;
+  } else {
+    hearEl.innerHTML = (blend === "paper" ? "4-IR blend " : "4-IR aligned ") + [...corners].sort((a, b) => b.w - a.w)
+      .map((c) => `<b>${c.id}</b> ${Math.round(c.w * 100)}%`).join(" · ");
+  }
+}
+function listenerAc() {
+  const w = new THREE.Vector3();
+  (renderer.xr.isPresenting ? renderer.xr.getCamera() : camera).getWorldPosition(w);
+  return threeToAc(w);
+}
+function updateListener(force = false) {   // 20 Hz is plenty for walking speed; gains glide in between
+  if (!audio) return;
+  const now = performance.now(); if (!force && now - lastPos < 50) return; lastPos = now;
+  const a = listenerAc(); audio.setPosition(a.x, a.y);
+}
+const fwd = new THREE.Vector3(), upv = new THREE.Vector3(), q = new THREE.Quaternion();
+function updateOrientation() {
+  if (!audio || !audio.ctx) return;
+  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  cam.getWorldQuaternion(q);
+  fwd.set(0, 0, -1).applyQuaternion(q); upv.set(0, 1, 0).applyQuaternion(q);
+  audio.setOrientation(fwd, upv);
+}
+async function togglePlay() {
+  const b = document.getElementById("aPlay");
+  if (audio.playing) { audio.stop(); b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); aStatus.textContent = "Stopped"; return; }
+  try { await audio.start(); } catch (err) { aStatus.textContent = `Could not start audio: ${err.message}`; return; }
+  updateListener(true); updateOrientation();
+  b.textContent = "Stop"; b.setAttribute("aria-pressed", "true"); aStatus.textContent = "Playing";
+}
+document.getElementById("aPlay").addEventListener("click", () => audio && togglePlay());
+const setPressed = (id, on) => document.getElementById(id).setAttribute("aria-pressed", String(on));
+document.getElementById("aRoom").addEventListener("click", () => { if (!audio) return; audio.setMode("room"); setPressed("aRoom", true); setPressed("aDry", false); });
+document.getElementById("aDry").addEventListener("click", () => { if (!audio) return; audio.setMode("dry"); setPressed("aDry", true); setPressed("aRoom", false); });
+document.querySelectorAll("#aBlend button").forEach((btn) => btn.addEventListener("click", () => {
+  if (!audio) return;
+  document.querySelectorAll("#aBlend button").forEach((x) => x.setAttribute("aria-pressed", String(x === btn)));
+  audio.setBlend(btn.dataset.blend); lastUi = 0; updateListener(true);
+}));
+document.getElementById("aVol").addEventListener("input", (ev) => {
+  const v = Number(ev.target.value); document.getElementById("aVolOut").value = `${v > 0 ? "+" : ""}${v} dB`; audio && audio.setVolume(v);
+});
+await setupAudio();
+
+// ---------- LAP: live acoustic parameters at the listener (params baked by `vr27irprep params`)
+// Nearest seat: that seat's baked values. 4-IR modes: the 4 corners' energy bins mixed with the bilinear
+// weights and refitted, so the values follow you between grid points (lap.js).
+let lap = null, lapOn = false, lapAll = false, lapBusy = false, lapLastT = 0;
+const lapEl = document.getElementById("lap"), lapTable = document.getElementById("lapTable");
+const lapPanel = makeLapPanel(THREE);
+lapPanel.mesh.position.set(0, -0.2, -0.75); lapPanel.mesh.visible = false; camera.add(lapPanel.mesh);
+const UNIT = { T20: "s", T30: "s", EDT: "s", C50: "dB", C80: "dB", D50: "%", D80: "%" };
+const SHOW_BANDS = [125, 250, 500, 1000, 2000, 4000];
+async function setupLap() {
+  if (!audio || !cfg.audio) return;
+  try { lap = await new LapData(cfg.audio.lap ?? cfg.audio.ir_base, { suffix: V }).load(); }
+  catch (err) { console.info("LAP disabled:", err.message); return; }
+  lap.scenario = audio.M.scenarios[0].id; lap.source = audio.source.id;
+  if (!lap.index.scenarios[lap.scenario]) { console.info("LAP: no parameters for scenario", lap.scenario); lap = null; return; }
+  document.getElementById("lapRow").hidden = false;
+}
+function lapHtml(res) {
+  if (!res) return "<tr><td>No parameters for this position</td></tr>";
+  const bands = lapAll ? SHOW_BANDS.filter((b) => res.values[String(b)]) : [];
+  const lab = (b) => (b >= 1000 ? `${b / 1000}k` : `${b}`);
+  let h = `<tr><th></th>${bands.map((b) => `<th>${lab(b)}</th>`).join("")}<th>${lapAll ? "mid" : "500/1k"}</th><th></th></tr>`;
+  for (const p of PARAMS) {
+    const cell = (v, cls = "") => `<td class="${v == null ? "na" : cls}">${fmt(p, v)}</td>`;
+    h += `<tr><td>${p}</td>${bands.map((b) => cell(res.values[String(b)][p])).join("")}${cell(res.mid[p], "mid")}<td class="na">${UNIT[p]}</td></tr>`;
+  }
+  return h;
+}
+function lapNote(res) {
+  if (!res) return "";
+  const notes = [];
+  const mid = lap.index.mid_bands.map(String);
+  const noT = PARAMS.slice(0, 2).filter((p) => res.mid[p] == null);
+  if (noT.length) notes.push(`${noT.join(", ")}: decay range too short in the 500 Hz/1 kHz bands (measured noise floor).`);
+  const ind = Object.entries(res.flags || {}).filter(([b, f]) => mid.includes(b) && f.some((x) => x.includes("indicative")));
+  if (ind.length) notes.push("Some 500 Hz/1 kHz values are indicative only (limited decay range).");
+  if (res.kind.includes("measured")) notes.push("Measured W channel: treat 125 Hz and below with care.");
+  return notes.join(" ");
+}
+async function lapRefresh(force = false) {
+  if (!lap || !lapOn || !lapNodes || lapBusy) return;
+  const now = performance.now(); if (!force && (!lapDirty || now - lapLastT < 150)) return;
+  lapBusy = true; lapDirty = false; lapLastT = now;
+  try {
+    const nodes = lapNodes.map((c) => ({ receiver: c.id, weight: c.w }));
+    const res = await lap.valuesAt({ scenario: lap.scenario, sources: [lap.source], nodes });
+    lapTable.innerHTML = lapHtml(res);
+    document.getElementById("lapSrc").textContent = res ? `${res.kind}${res.blended ? " · blended" : ""} · ${lap.source}` : "";
+    document.getElementById("lapNote").textContent = lapNote(res);
+    lapPanel.update(res, { full: lapAll });
+  } catch (err) { console.warn("LAP:", err); }
+  finally { lapBusy = false; }
+}
+function setLap(on) {
+  lapOn = on; lapEl.hidden = !on; lapPanel.mesh.visible = on && renderer.xr.isPresenting;
+  if (on) { lapDirty = true; lapRefresh(true); }
+}
+document.getElementById("aLap").addEventListener("change", (e) => setLap(e.target.checked));
+document.getElementById("aLapBands").addEventListener("change", (e) => { lapAll = e.target.checked; lapRefresh(true); });
+renderer.xr.addEventListener("sessionstart", () => (lapPanel.mesh.visible = lapOn));
+renderer.xr.addEventListener("sessionend", () => (lapPanel.mesh.visible = false));
+await setupLap();
+window.__vr27 = { get audio() { return audio; }, get lap() { return lap; }, rig, acToThree };   // for testing from the console
+
+// ---------- acoustic overlay + legend
+const legend = document.getElementById("legend");
+legend.innerHTML = Object.keys(LAYER_COLOURS).map((k) =>
+  `<span><i style="background:${LAYER_COLOURS[k]}"></i>${LAYER_NAMES[k]}</span>`).join("");
+function setAcoustic(on) {
+  // Flat colour per acoustic material, still shaded by the baked light so the room stays readable.
+  for (const o of acousticMeshes) {
+    const n = originalMats.get(o).name || "WINDOW";
+    if (!on) { o.material = originalMats.get(o); continue; }
+    o.material = n === "WINDOW"
+      ? new THREE.MeshBasicMaterial({ color: LAYER_COLOURS.WINDOW, transparent: true, opacity: 0.6, side: THREE.DoubleSide })
+      : new THREE.MeshLambertMaterial({ color: LAYER_COLOURS[n], lightMap: lightTex, lightMapIntensity: LM * 0.9 });
+  }
+  legend.hidden = !on;
+}
+
+// ---------- acoustic axes at the model origin
+const axes = new THREE.Group();
+function axis(dir, colour, label) {
+  const d = acToThree(...dir).normalize();
+  axes.add(new THREE.ArrowHelper(d, acToThree(0, 0, 0.02), 1.2, colour, 0.18, 0.09));
+  const c = document.createElement("canvas");
+  c.width = 128; c.height = 64;
+  const g = c.getContext("2d");
+  g.font = "600 40px IBM Plex Mono, monospace";
+  g.fillStyle = "#" + colour.toString(16).padStart(6, "0");
+  g.fillText(label, 8, 46);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+  s.scale.set(0.4, 0.2, 1);
+  s.position.copy(d.clone().multiplyScalar(1.45).add(acToThree(0, 0, 0.02)));
+  axes.add(s);
+}
+axis([1, 0, 0], 0xd9534f, "+x");
+axis([0, 1, 0], 0x4caf50, "+y");
+axis([0, 0, 1], 0x3d7dd8, "+z");
+axes.visible = false;
+scene.add(axes);
+
+// ---------- viewpoints (acoustic coordinates)
+const VIEW_LABELS = { back: "Back of room", front: "Front corner", window: "Facing windows" };
+for (const key of Object.keys(cfg.views)) {
+  const b = document.createElement("button"); b.type = "button"; b.id = `v-${key}`; b.dataset.view = key;
+  b.textContent = cfg.views[key].label ?? VIEW_LABELS[key] ?? key; document.getElementById("views").appendChild(b);
+}
+function setView(key) {
+  const v = cfg.views[key];
+  const p = acToThree(v.pos[0], v.pos[1], 0);
+  const fy = floorAt(p.x, p.z, v.probe_top ?? PROBE_TOP); if (fy !== null) p.y = fy;
+  rig.position.copy(p);
+  camera.position.set(0, EYE, 0);
+  const t = acToThree(v.target[0], v.target[1], v.target[2]);
+  const dx = t.x - p.x, dz = t.z - p.z, dy = t.y - (p.y + EYE);
+  yaw = Math.atan2(-dx, -dz);
+  pitch = Math.atan2(dy, Math.hypot(dx, dz));
+  applyLook();
+  document.querySelectorAll("#views button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === key)));
+}
+function applyLook() {
+  camera.rotation.set(pitch, yaw, 0, "YXZ");
+}
+document.querySelectorAll("#views button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+setView(cfg.default_view ?? (cfg.views.back ? "back" : Object.keys(cfg.views)[0]));
+
+// ---------- toggles
+function bindToggle(id, fn) {
+  const b = document.getElementById(id);
+  b.addEventListener("click", () => {
+    const on = b.getAttribute("aria-pressed") !== "true";
+    b.setAttribute("aria-pressed", String(on));
+    fn(on);
+  });
+}
+bindToggle("t-acoustic", setAcoustic);
+bindToggle("t-axes", (on) => (axes.visible = on));
+bindToggle("t-furniture", (on) => furnitureMeshes.forEach((m) => (m.visible = on)));
+bindToggle("t-seats", (on) => { if (seatMesh) seatMesh.visible = on; });
+for (const t of extraToggles) bindToggle(t.id, t.fn);
+const ev = document.getElementById("ev"), evOut = document.getElementById("ev-out");
+function setExposure() {
+  renderer.toneMappingExposure = Math.pow(2, parseFloat(ev.value) + (cfg.exposure_ev ?? 0));
+  evOut.value = (parseFloat(ev.value) >= 0 ? "+" : "") + parseFloat(ev.value).toFixed(1);
+}
+ev.addEventListener("input", setExposure);
+setExposure();
+
+// ---------- desktop look + walk
+const el = renderer.domElement;
+let dragging = false, lx = 0, ly = 0;
+let downX = 0, downY = 0;
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+el.addEventListener("pointerdown", (e) => { dragging = true; lx = downX = e.clientX; ly = downY = e.clientY; el.setPointerCapture(e.pointerId); });
+el.addEventListener("pointerup", (e) => {
+  dragging = false;
+  if (!seatMesh || !seatMesh.visible || Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return;
+  const r = el.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(seatMesh)[0];
+  if (!hit) return;
+  const st = audio.byId.get(seatIndex[hit.instanceId]);
+  const p = acToThree(st.position[0], st.position[1], 0);
+  rig.position.x = p.x; rig.position.z = p.z;
+  updateListener(true);
+});
+el.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  yaw += (e.clientX - lx) * 0.004;
+  pitch = Math.max(-1.3, Math.min(1.3, pitch + (e.clientY - ly) * 0.004));
+  lx = e.clientX; ly = e.clientY;
+  applyLook();
+});
+const keys = new Set();
+window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
+window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+const B = cfg.walk_bounds; // acoustic coordinates
+function clampRig() {
+  const a = threeToAc(rig.position);
+  const inAlcove = B.alcove_x0 != null && a.x >= B.alcove_x0;
+  a.x = Math.min(B.x1, Math.max(B.x0, a.x));
+  a.y = Math.min(inAlcove ? B.alcove_y1 : B.y1, Math.max(B.y0, a.y));
+  const p = acToThree(a.x, a.y, 0);
+  rig.position.x = p.x; rig.position.z = p.z;
+  if (floorMeshes.length) {   // follow the floor: step up to 1 m (raked rows), drop down to anything below
+    const fy = floorAt(p.x, p.z, rig.position.y + 1.0);
+    if (fy !== null) rig.position.y += (fy - rig.position.y) * 0.35;
+  }
+}
+
+// ---------- WebXR
+const vrBtn = document.getElementById("vr");
+let xrSupported = false;
+try { xrSupported = !!(navigator.xr && await navigator.xr.isSessionSupported("immersive-vr")); } catch { xrSupported = false; }
+if (xrSupported) {
+  vrBtn.disabled = false;
+  vrBtn.textContent = "Enter VR";
+  vrBtn.addEventListener("click", async () => {
+    try {
+      const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local-floor"] });
+      renderer.xr.setReferenceSpaceType("local-floor");
+      await renderer.xr.setSession(session);
+      if (audio && !audio.playing) togglePlay();
+      camera.position.set(0, 0, 0);
+      session.addEventListener("end", () => { camera.position.set(0, EYE, 0); applyLook(); });
+    } catch (err) {
+      vrBtn.textContent = "VR blocked here";
+    }
+  });
+} else {
+  vrBtn.title = "Open this page in the Quest browser over HTTPS to use VR";
+}
+let snapReady = true;
+function xrLocomotion(dt) {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  for (const src of session.inputSources) {
+    const gp = src.gamepad;
+    if (!gp || gp.axes.length < 4) continue;
+    const ax = gp.axes[2], ay = gp.axes[3];
+    if (src.handedness === "left" && (Math.abs(ax) > 0.15 || Math.abs(ay) > 0.15)) {
+      const head = new THREE.Vector3();
+      renderer.xr.getCamera().getWorldDirection(head);
+      head.y = 0; head.normalize();
+      const right = new THREE.Vector3().crossVectors(head, new THREE.Vector3(0, 1, 0));
+      rig.position.addScaledVector(head, -ay * 1.4 * dt).addScaledVector(right, ax * 1.4 * dt);
+    }
+    if (src.handedness === "right") {
+      if (Math.abs(ax) > 0.7 && snapReady) { rig.rotation.y -= Math.sign(ax) * Math.PI / 6; snapReady = false; }
+      if (Math.abs(ax) < 0.3) snapReady = true;
+    }
+  }
+}
+
+// ---------- loop
+const posEl = document.getElementById("pos");
+const clock = new THREE.Clock();
+// Desktop only: a soft bloom on the light panels and the bright sky. Off in the headset (cost, and
+// post-processing does not run on the XR framebuffer).
+let composer = null;
+if (cfg.bloom !== false) {
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), cfg.bloom?.strength ?? 0.22, 0.6, cfg.bloom?.threshold ?? 0.92));
+  composer.addPass(new OutputPass());
+  const rs = () => composer.setSize(window.innerWidth, window.innerHeight);
+  window.addEventListener("resize", rs); rs();
+}
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (!renderer.xr.isPresenting) {
+    const f = (keys.has("w") || keys.has("arrowup") ? 1 : 0) - (keys.has("s") || keys.has("arrowdown") ? 1 : 0);
+    const s = (keys.has("d") || keys.has("arrowright") ? 1 : 0) - (keys.has("a") || keys.has("arrowleft") ? 1 : 0);
+    if (f || s) {
+      const sp = 1.6 * dt;
+      rig.position.x += (-Math.sin(yaw) * f + Math.cos(yaw) * s) * sp;
+      rig.position.z += (-Math.cos(yaw) * f - Math.sin(yaw) * s) * sp;
+    }
+  } else {
+    xrLocomotion(dt);
+  }
+  clampRig();
+  const w = new THREE.Vector3();
+  (renderer.xr.isPresenting ? renderer.xr.getCamera() : camera).getWorldPosition(w);
+  const a = threeToAc(w);
+  posEl.innerHTML = `x <b>${a.x.toFixed(2)}</b> y <b>${a.y.toFixed(2)}</b> z <b>${a.z.toFixed(2)}</b> m`;
+  updateListener(); updateOrientation(); lapRefresh();
+  if (composer && !renderer.xr.isPresenting) composer.render(); else renderer.render(scene, camera);
+});
+if (window.innerWidth < 900) document.getElementById("controls").open = false;
+window.__ready = true;
+</script>
+
+</body>
+</html>

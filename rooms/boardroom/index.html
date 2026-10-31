@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boardroom · E-LAB VR27</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="../../shared/nav.js" defer></script>
+<style>
+/* Layout: full-bleed 3D room, one control console docked top-left (bottom sheet on phones), plan inset inside it. */
+:root {
+  --bg: #e8ebe7;          /* page ground behind the 3D view */
+  --panel: #f8f9f6ee;     /* console surface */
+  --ink: #1d221d;         /* text */
+  --muted: #5d665e;       /* secondary text */
+  --line: #c9d0c8;        /* hairlines, idle control borders */
+  --chair: #3f7f86;       /* the boardroom's teal chairs: active controls */
+  --oak: #b9853d;         /* the timber table / ceiling grid: listener, source */
+  --on-chair: #ffffff;
+  --plan-floor: #e2ddd2;
+  --font-ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111512; --panel: #181e1aee; --ink: #e4eae4; --muted: #95a198; --line: #2d3830;
+  --chair: #5fb0b8; --oak: #e0a957; --on-chair: #0b1210; --plan-floor: #262420; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111512; --panel: #181e1aee; --ink: #e4eae4; --muted: #95a198; --line: #2d3830;
+  --chair: #5fb0b8; --oak: #e0a957; --on-chair: #0b1210; --plan-floor: #262420; color-scheme: dark }
+
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; overflow: hidden; }
+#view { position: fixed; inset: 0; touch-action: none; cursor: grab; }
+#view:active { cursor: grabbing; }
+#view canvas { display: block; width: 100%; height: 100%; }
+
+.console {
+  position: fixed; z-index: 2;
+  top: calc(12px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px));
+  width: min(340px, calc(100% - 24px)); max-height: calc(100% - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto; background: var(--panel); backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 12px;
+}
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+.group { display: grid; gap: 5px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg.two-rows { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+.seg button { font: inherit; font-size: 13px; padding: 7px 4px; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.seg:not(.two-rows) button + button { border-left: 1px solid var(--line); }
+.seg.two-rows button:nth-child(even) { border-left: 1px solid var(--line); }
+.seg.two-rows button:nth-child(n+3) { border-top: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--chair); color: var(--on-chair); font-weight: 500; }
+.seg button small { display: block; font-family: var(--font-data); font-size: 10.5px; opacity: 0.8; font-variant-numeric: tabular-nums; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--oak); outline-offset: 1px; }
+.play { font: inherit; font-weight: 600; font-size: 14px; padding: 9px 14px; border-radius: 7px; border: 1px solid var(--chair);
+  background: var(--chair); color: var(--on-chair); cursor: pointer; min-width: 92px; }
+.play[aria-pressed="true"] { background: transparent; color: var(--chair); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.slider { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 140px; }
+.slider input { flex: 1; accent-color: var(--chair); }
+.slider output { font-family: var(--font-data); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+#plan { width: 100%; height: auto; display: block; border-radius: 6px; background: var(--plan-floor); cursor: crosshair; }
+.readout { font-family: var(--font-data); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1.5; }
+.readout b { color: var(--ink); font-weight: 500; }
+#status { font-size: 12px; color: var(--muted); min-height: 1.4em; }
+#status.err { color: #c0392b; }
+details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+details p { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 6px 0 0; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 1; color: var(--muted); font-family: var(--font-data); font-size: 13px; pointer-events: none; padding-inline: max(16px, env(safe-area-inset-left, 0px)); text-align: center; }
+.toggle { font-size: 12px; background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 3px 8px; cursor: pointer; font-family: var(--font-ui); }
+@media (max-width: 640px) {
+  .console { top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); left: max(10px, env(safe-area-inset-left, 0px));
+    width: auto; right: max(10px, env(safe-area-inset-right, 0px)); max-height: 52%; }
+}
+.console.min > :not(.head), .console.min #plan { display: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="view" aria-label="3D view of the boardroom. Drag to look, W A S D to walk."></div>
+<div id="loading">Loading the room…</div>
+
+<section class="console" id="console" aria-label="Listening controls">
+  <div class="head">
+    <div>
+      <h1>Boardroom</h1>
+      <p class="sub">Acoustic curtain off / on · simulated FOA IRs · 10 × 11 grid</p>
+    </div>
+    <button class="toggle" id="minBtn" type="button" aria-expanded="true">Hide</button>
+  </div>
+
+  <div class="row">
+    <button class="play" id="play" type="button" aria-pressed="false">Play</button>
+    <label class="slider" for="vol"><span class="label">Level</span>
+      <input id="vol" type="range" min="-30" max="12" step="1" value="0">
+      <output id="volOut" for="vol">0 dB</output></label>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblScene">Scene</span>
+    <div class="seg" role="group" aria-labelledby="lblScene" id="scene">
+      <button type="button" data-v="0" aria-pressed="true">Curtain off<small>T20 0.86 s · C50 5.4</small></button>
+      <button type="button" data-v="1" aria-pressed="false">Curtain on<small>T20 0.37 s · C50 11.5</small></button>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblTrack">Track</span>
+    <div class="seg" role="group" aria-labelledby="lblTrack" id="track">
+      <button type="button" data-v="S01_Boardroom" aria-pressed="true">Speech</button>
+      <button type="button" data-v="T3c" aria-pressed="false">T3c (2019)</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblBlend">Position</span>
+    <div class="seg" role="group" aria-labelledby="lblBlend" id="blend">
+      <button type="button" data-v="nearest" aria-pressed="true" title="Case A: IR of the nearest grid point">Nearest IR</button>
+      <button type="button" data-v="paper" aria-pressed="false" title="Case B as published: 4 corner IRs, bilinear amplitude weights">4-IR blend</button>
+      <button type="button" data-v="aligned" aria-pressed="false" title="Case B improved: corners time-aligned, tail mixed by energy">4-IR aligned</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="group" style="flex: 2; min-width: 150px">
+      <span class="label" id="lblMode">Sound</span>
+      <div class="seg" role="group" aria-labelledby="lblMode" id="mode">
+        <button type="button" data-v="room" aria-pressed="true">Room</button>
+        <button type="button" data-v="dry" aria-pressed="false">Direct only</button>
+      </div>
+    </div>
+    <div class="group" style="flex: 1; min-width: 90px">
+      <span class="label" id="lblPts">IR points</span>
+      <div class="seg" role="group" aria-labelledby="lblPts" id="points">
+        <button type="button" data-v="on" aria-pressed="true">Show</button>
+        <button type="button" data-v="off" aria-pressed="false">Hide</button>
+      </div>
+    </div>
+  </div>
+
+  <svg id="plan" viewBox="0 0 100 64" role="img" aria-label="Room plan: stage end at the right. Click to move there."></svg>
+  <div class="readout" id="readout">—</div>
+  <div id="status" role="status" aria-live="polite">Press Play to start. Headphones on.</div>
+
+  <details>
+    <summary>Controls and notes</summary>
+    <p>Drag to look around. W and S (or the up and down arrows) walk, A and D step sideways, Q and E (or left and right arrows) turn. Click a grid point in the room or on the plan to stand there. Space plays or stops.</p>
+    <p>Switching scene changes the IRs, the lighting and the curtain together. The curtain runs along the window wall and the stage-end wall, so it also cuts the daylight.</p>
+    <p>Both IR sets are simulated (2019) and share one level reference, so switching changes only the room. The grid sits centred in the room; the source lands on the presenter's position at the stage end. Eye and ear height 1.2 m (seated).</p>
+    <p>Model rebuilt from the 2019 Unity FBX files, lighting baked in Blender Cycles for curtain off and on. Plants and the presenter figure are left out.</p>
+  </details>
+</section>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { SeatAudio } from "./vr27engine.js";
+
+// ------------------------------------------------------------------ geometry (acoustic frame: x towards the stage, y left, z up)
+const ROOM = { x0: -7.55, x1: 7.45, y0: -3.85, y1: 4.30 };   // partition .. stage-end curtain, window curtain line .. corridor wall
+const BOUND = { x0: ROOM.x0 + 0.3, x1: ROOM.x1 - 0.3, y0: ROOM.y0 + 0.3, y1: ROOM.y1 - 0.3 };
+const EYE = 1.2;
+const LM_INTENSITY = 44.4827;                                  // pi * lightmap scale (14.159)
+const SCENES = [   // index = manifest order
+  { id: "SCN000_CurtainOff", lightmap: "off", curtain: false },
+  { id: "SCN001_CurtainOn", lightmap: "on", curtain: true },
+];
+const glassMat = () => new THREE.MeshBasicMaterial({ color: 0xbcd3db, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
+const tj = (x, y, z) => new THREE.Vector3(x, z, -y);   // acoustic -> three.js
+
+const M = await fetch("audio/manifest.json").then((r) => r.json());
+const SRC = M.sources[0].position;
+const RECV = M.receivers;   // engine ids xIyJ: i towards the stage, j across; label = file name (x across, y towards the stage)
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ------------------------------------------------------------------ 3D
+const host = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = 1.0;
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 200);
+function resize() { const w = host.clientWidth, h = host.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize); resize();
+function setBg() { scene.background = new THREE.Color(css("--bg")); }
+setBg(); matchMedia("(prefers-color-scheme: dark)").addEventListener("change", setBg);
+
+const lm = {}; const lit = []; let curtainNode = null;
+async function loadText(url) { const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`); return r.text(); }
+(async () => {
+  const msg = document.getElementById("loading");
+  let step = "download";
+  try {
+    const tl = new THREE.TextureLoader();
+    const [b64, lmOff, lmOn] = await Promise.all([loadText("model/boardroom.glb.b64.txt"),
+      tl.loadAsync("model/lightmap_off.jpg"), tl.loadAsync("model/lightmap_on.jpg")]);
+    for (const [k, t] of [["off", lmOff], ["on", lmOn]]) { t.flipY = false; t.channel = 1; t.colorSpace = THREE.SRGBColorSpace; lm[k] = t; }
+    step = "unpack";
+    const bin = atob(b64.trim()), buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    step = "mesh decoder"; await MeshoptDecoder.ready;
+    step = "parse";
+    const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+    const g = await loader.parseAsync(buf.buffer, "");
+    let noLM = 0;
+    g.scene.updateMatrixWorld(true);
+    const isStagePane = (o) => {   // three.js x = acoustic x (towards the stage); stage-end wall at x ~ 7.6
+      const b = new THREE.Box3().setFromObject(o), s = b.getSize(new THREE.Vector3());
+      // the pane wraps the corner (x 5.6-7.7), so test its far edge; few vertices keeps the slider frame and walls out
+      return b.max.x > 7.5 && b.min.x > 5.0 && s.y > 2.0 && s.z > 5.0 && o.geometry.attributes.position.count < 300;
+    };
+    g.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      let top = o; while (top.parent && top.parent !== g.scene) top = top.parent;
+      const group = top.name;
+      if (group === "CURTAIN_ON") curtainNode = top;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const hasLM = !!o.geometry.attributes.uv1;   // lightmap UVs (TEXCOORD_1); without them the lightmap shader does not compile
+      if (!hasLM) noLM++;
+      const out = mats.map((m) => {
+        // glazing that was joined into the room (the stage-end sliding partition): draw as clear glass so the city shows through
+        // the stage-end sliding glass partition (opaque grey "Material #27" in the 2019 Unity scene; merged with another
+        // material by the optimiser, so found by shape: a thin pane spanning the stage-end wall) is glazed too
+        if (group === "ROOM" && (m.transparent || isStagePane(o))) return glassMat();
+        if ((group === "ROOM" || group === "CURTAIN_ON") && !hasLM) return new THREE.MeshBasicMaterial({ map: m.map, color: m.color, transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest, side: m.side });
+        if (group === "ROOM" || group === "CURTAIN_ON") {
+          const b = new THREE.MeshBasicMaterial({ map: m.map, color: m.color, transparent: m.transparent, opacity: m.opacity,
+            alphaTest: m.alphaTest, side: m.side, lightMap: group === "CURTAIN_ON" ? lm.on : lm.off, lightMapIntensity: LM_INTENSITY });
+          b.userData.curtain = group === "CURTAIN_ON"; lit.push(b); return b;
+        }
+        if (group === "GLASS") return glassMat();
+        return m;   // BACKDROP: unlit already
+      });
+      o.material = Array.isArray(o.material) ? out : out[0];
+    });
+    if (noLM) console.warn(`VR27: ${noLM} mesh part(s) without lightmap UVs, shown unlit`);
+    scene.add(g.scene);
+    // presenter (RenderPeople "Carla", posed in Blender): stands on the source position, facing the table (acoustic -x)
+    loadText("model/presenter.glb.b64.txt").then(async (pb) => {
+      const s = atob(pb.trim()), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+      const pg = await loader.parseAsync(u.buffer, "");
+      pg.scene.traverse((o) => { if (o.isMesh) o.material = new THREE.MeshBasicMaterial({ map: o.material.map, color: new THREE.Color(0.93, 0.93, 0.93) }); });
+      // E-LAB logo on her left chest (blazer lapel): white/purple stacked logo, 6 cm wide, on the surface found by a
+      // ray cast in Blender (glTF frame: x = her left, y up, z forward), lifted 8 mm off the fabric
+      const logoTex = await new THREE.TextureLoader().loadAsync("model/elab_logo.png"); logoTex.colorSpace = THREE.SRGBColorSpace;
+      const logo = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.06 * 1.227),
+        new THREE.MeshBasicMaterial({ map: logoTex, transparent: true, depthWrite: false, toneMapped: false }));
+      const n = new THREE.Vector3(0.62, 0.08, 1).normalize();
+      logo.position.set(0.128, 1.245, 0.125).addScaledVector(n, 0.008);
+      logo.lookAt(logo.position.clone().add(n)); logo.name = "ELAB_LOGO"; pg.scene.add(logo);
+      pg.scene.position.copy(tj(SRC[0], SRC[1], 0)); pg.scene.rotation.y = -Math.PI / 2;
+      pg.scene.name = "PRESENTER"; scene.add(pg.scene);
+    }).catch((e) => console.warn("VR27: presenter did not load", e));
+    applyScene(0);
+    msg.hidden = true;
+  } catch (err) {
+    console.error(err);
+    msg.textContent = `The 3D model did not load (${step}: ${err?.message ?? err}). Audio still works from the plan.`;
+  }
+})();
+function applyScene(i) {
+  const s = SCENES[i];
+  for (const m of lit) if (!m.userData.curtain) { m.lightMap = lm[s.lightmap]; m.needsUpdate = true; }
+  if (curtainNode) curtainNode.visible = s.curtain;
+}
+
+// grid markers (floor discs) and source marker
+const markers = new THREE.Group(); scene.add(markers);
+const discGeo = new THREE.CircleGeometry(0.1, 24).rotateX(-Math.PI / 2);
+const matIdle = new THREE.MeshBasicMaterial({ color: 0x3f7f86, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false });
+const matOn = new THREE.MeshBasicMaterial({ color: 0xe0a957, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false });
+const disc = new Map();
+for (const r of RECV) {
+  const m = new THREE.Mesh(discGeo, matIdle); m.position.copy(tj(r.position[0], r.position[1], 0.015));
+  m.userData.id = r.id; m.renderOrder = 2; markers.add(m); disc.set(r.id, m);
+}
+const srcMark = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.21, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xe0a957, side: THREE.DoubleSide, toneMapped: false }));
+srcMark.position.copy(tj(SRC[0], SRC[1], 0.016)); markers.add(srcMark);
+
+// ------------------------------------------------------------------ listener + navigation
+const start = RECV.find((r) => r.label === "x02y02") ?? RECV[0];
+const me = { x: start.position[0], y: start.position[1], yaw: 0, pitch: -0.04 };   // yaw 0 = facing the stage (+x)
+const keys = new Set();
+addEventListener("keydown", (e) => {
+  if (e.target.closest?.("input")) return;
+  if (e.code === "Space") { e.preventDefault(); togglePlay(); return; }
+  keys.add(e.code);
+});
+addEventListener("keyup", (e) => keys.delete(e.code));
+let drag = null;
+host.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, yaw: me.yaw, pitch: me.pitch, moved: false }; host.setPointerCapture(e.pointerId); });
+host.addEventListener("pointermove", (e) => {
+  if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 4) drag.moved = true;
+  me.yaw = drag.yaw - dx * 0.004; me.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + dy * 0.004));
+});
+host.addEventListener("pointerup", (e) => { if (drag && !drag.moved) pick(e); drag = null; });
+const ray = new THREE.Raycaster();
+function pick(e) {
+  const r = host.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+  const hit = ray.intersectObjects([...disc.values()])[0];
+  if (hit) goSeat(hit.object.userData.id);
+}
+function goSeat(id) { const r = RECV.find((q) => q.id === id); me.x = r.position[0]; me.y = r.position[1]; rig.seat(id); }
+const clampMe = () => { me.x = Math.min(BOUND.x1, Math.max(BOUND.x0, me.x)); me.y = Math.min(BOUND.y1, Math.max(BOUND.y0, me.y)); };
+
+// ------------------------------------------------------------------ plan inset (stage end on the right, window wall at the bottom)
+const plan = document.getElementById("plan"), NS = "http://www.w3.org/2000/svg";
+const PW = 100, PH = 64, pad = 4;
+const ps = Math.min((PW - 2 * pad) / (ROOM.x1 - ROOM.x0), (PH - 2 * pad) / (ROOM.y1 - ROOM.y0));
+const ox = (PW - ps * (ROOM.x1 - ROOM.x0)) / 2, oy = (PH - ps * (ROOM.y1 - ROOM.y0)) / 2;
+const P = (x, y) => [ox + (x - ROOM.x0) * ps, oy + (ROOM.y1 - y) * ps];
+const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); plan.appendChild(e); return e; };
+const [rx, ry] = P(ROOM.x0, ROOM.y1);
+el("rect", { x: rx, y: ry, width: (ROOM.x1 - ROOM.x0) * ps, height: (ROOM.y1 - ROOM.y0) * ps, fill: "none", stroke: "var(--muted)", "stroke-width": 0.5 });
+const [tx0, ty0] = P(-4.35, 1.05), [tx1, ty1] = P(4.35, -1.05);   // table outline (approximate)
+el("rect", { x: tx0, y: ty0, width: tx1 - tx0, height: ty1 - ty0, rx: 3.5, fill: "none", stroke: "var(--oak)", "stroke-width": 0.5, opacity: 0.7 });
+const curtainLine = el("path", { d: `M${P(ROOM.x0, ROOM.y0).join(",")} L${P(ROOM.x1, ROOM.y0).join(",")} L${P(ROOM.x1, ROOM.y1).join(",")}`,
+  fill: "none", stroke: "var(--chair)", "stroke-width": 1.2, "stroke-dasharray": "1.4 0.8", opacity: 0 });
+const pd = new Map();
+for (const r of RECV) { const [a, b] = P(r.position[0], r.position[1]); pd.set(r.id, el("circle", { cx: a, cy: b, r: 0.9, fill: "var(--chair)", opacity: 0.55 })); }
+{ const [a, b] = P(SRC[0], SRC[1]); el("circle", { cx: a, cy: b, r: 1.6, fill: "var(--oak)" });
+  const t = el("text", { x: a + 2.4, y: b + 1.1, "font-size": 3, fill: "var(--muted)", "font-family": "IBM Plex Mono, monospace" }); t.textContent = "S"; }
+const meDot = el("circle", { r: 1.5, fill: "var(--oak)", stroke: "var(--ink)", "stroke-width": 0.4 });
+const meDir = el("line", { stroke: "var(--ink)", "stroke-width": 0.6, "stroke-linecap": "round" });
+plan.addEventListener("click", (e) => {
+  const pt = plan.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(plan.getScreenCTM().inverse());
+  me.x = ROOM.x0 + (q.x - ox) / ps; me.y = ROOM.y1 - (q.y - oy) / ps; clampMe();
+});
+
+// ------------------------------------------------------------------ audio
+const statusEl = document.getElementById("status");
+const say = (t, err = false) => { statusEl.textContent = t; statusEl.classList.toggle("err", err); };
+const rig = {
+  ctx: null, eng: null, playing: false, t0: 0, track: "S01_Boardroom", scn: 0, blend: "nearest", mode: "room", vol: 0, buffers: {},
+  async init() {
+    this.ctx = new AudioContext({ latencyHint: "playback" });
+    this.eng = new SeatAudio({ manifest: M, irBase: "audio/", ctx: this.ctx });
+    const e = this.eng; e.onstatus = (t) => say(t, true); e.blend = this.blend; e.mode = this.mode; e.vol = this.vol; e.scn = this.scn;
+    e.onweights = (w) => showWeights(w.corners);
+    say("Building the binaural decoder…");
+    await e.prepare();
+  },
+  async load(track) {
+    if (this.buffers[track]) return this.buffers[track];
+    say("Loading the track…");
+    const r = await fetch(`audio/${track}.mp3`); if (!r.ok) throw new Error(`${track}.mp3 did not load (${r.status})`);
+    return (this.buffers[track] = await this.ctx.decodeAudioData(await r.arrayBuffer()));
+  },
+  async start() {
+    if (!this.ctx) await this.init();
+    if (this.ctx.state === "suspended") await this.ctx.resume();
+    const b = await this.load(this.track);
+    const when = this.ctx.currentTime + 0.08; this.eng.play(b, when, 0, 1); this.t0 = when;
+    this.playing = true; say(`Playing · ${sceneLabel()}`);
+  },
+  async restart() {
+    if (!this.playing) return;
+    const b = await this.load(this.track), when = this.ctx.currentTime + 0.08;
+    this.eng.play(b, when, 0, 1); this.t0 = when; say(`Playing · ${sceneLabel()}`);
+  },
+  stop() { if (!this.eng) return; this.eng.stop(); this.playing = false; say("Stopped"); },
+  pos(x, y) { this.eng?.setPosition(x, y, EYE); if (!this.eng) showWeights([{ id: nearest(x, y).id, w: 1 }]); },
+  seat(id) { this.eng?.setSeat(id); },
+};
+const sceneLabel = () => document.querySelector(`#scene button[data-v="${rig.scn}"]`).firstChild.textContent;
+
+async function togglePlay() {
+  const b = document.getElementById("play");
+  try {
+    if (rig.playing) { rig.stop(); b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); }
+    else { b.textContent = "Stop"; b.setAttribute("aria-pressed", "true"); await rig.start(); rig.pos(me.x, me.y); }
+  } catch (err) { say(err.message, true); b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); rig.playing = false; }
+}
+document.getElementById("play").addEventListener("click", togglePlay);
+
+function segment(id, fn) {
+  const g = document.getElementById(id);
+  g.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    for (const x of g.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+    fn(b.dataset.v);
+  });
+}
+segment("scene", async (v) => {
+  const i = +v; rig.scn = i; applyScene(i); curtainLine.setAttribute("opacity", SCENES[i].curtain ? 0.9 : 0);
+  if (rig.eng) { say(`Loading ${sceneLabel()}…`); try { await rig.eng.setScenario(i); say(rig.playing ? `Playing · ${sceneLabel()}` : sceneLabel()); } catch (e) { say(e.message, true); } }
+});
+segment("points", (v) => { markers.visible = v === "on"; });
+segment("track", (v) => { rig.track = v; rig.restart().catch((e) => say(e.message, true)); });
+segment("blend", (v) => { rig.blend = v; rig.eng?.setBlend(v); });
+segment("mode", (v) => { rig.mode = v; rig.eng?.setMode(v); });
+const vol = document.getElementById("vol"), volOut = document.getElementById("volOut");
+vol.addEventListener("input", () => { rig.vol = +vol.value; volOut.textContent = `${vol.value > 0 ? "+" : ""}${vol.value} dB`; rig.eng?.setVolume(rig.vol); });
+document.getElementById("minBtn").addEventListener("click", (e) => {
+  const c = document.getElementById("console"), min = c.classList.toggle("min");
+  e.target.textContent = min ? "Show" : "Hide"; e.target.setAttribute("aria-expanded", String(!min));
+});
+
+function nearest(x, y) { let best = RECV[0], bd = Infinity; for (const r of RECV) { const d = Math.hypot(r.position[0] - x, r.position[1] - y); if (d < bd) { bd = d; best = r; } } best.d = bd; return best; }
+function showWeights(corners) {
+  const on = new Map(corners.filter((c) => c.w > 0.001).map((c) => [c.id, c.w]));
+  for (const [id, m] of disc) m.material = on.has(id) ? matOn : matIdle;
+  for (const [id, d] of pd) { const w = on.get(id); d.setAttribute("fill", w ? "var(--oak)" : "var(--chair)"); d.setAttribute("r", w ? 0.9 + 1.1 * w : 0.9); d.setAttribute("opacity", w ? 1 : 0.55); }
+}
+
+// ------------------------------------------------------------------ frame loop
+const readout = document.getElementById("readout");
+const clock = new THREE.Clock(); let lastSent = "";
+const fwd = new THREE.Vector3(), up = new THREE.Vector3();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05), sp = 1.4 * dt;
+  if (keys.has("KeyQ") || keys.has("ArrowLeft")) me.yaw -= 1.6 * dt;
+  if (keys.has("KeyE") || keys.has("ArrowRight")) me.yaw += 1.6 * dt;
+  const c = Math.cos(me.yaw), s = Math.sin(me.yaw);   // forward = (cos, -sin), right = (-sin, -cos)
+  let mv = 0, st = 0;
+  if (keys.has("KeyW") || keys.has("ArrowUp")) mv += 1;
+  if (keys.has("KeyS") || keys.has("ArrowDown")) mv -= 1;
+  if (keys.has("KeyD")) st += 1;
+  if (keys.has("KeyA")) st -= 1;
+  if (mv || st) { me.x += (c * mv - s * st) * sp; me.y += (-s * mv - c * st) * sp; clampMe(); }
+  camera.position.copy(tj(me.x, me.y, EYE));
+  const dir = tj(Math.cos(me.yaw) * Math.cos(me.pitch), -Math.sin(me.yaw) * Math.cos(me.pitch), Math.sin(me.pitch));
+  camera.lookAt(camera.position.clone().add(dir));
+  renderer.render(scene, camera);
+  const key = `${me.x.toFixed(3)},${me.y.toFixed(3)}`;
+  if (key !== lastSent) { lastSent = key; rig.pos(me.x, me.y); updateReadout(); }
+  if (rig.eng) { camera.getWorldDirection(fwd); up.set(0, 1, 0).applyQuaternion(camera.quaternion); rig.eng.setOrientation(fwd, up); }
+  const [a, b] = P(me.x, me.y); meDot.setAttribute("cx", a); meDot.setAttribute("cy", b);
+  meDir.setAttribute("x1", a); meDir.setAttribute("y1", b);
+  meDir.setAttribute("x2", a + Math.cos(me.yaw) * 4); meDir.setAttribute("y2", b + Math.sin(me.yaw) * 4);
+});
+function updateReadout() {
+  const n = nearest(me.x, me.y), d = Math.hypot(SRC[0] - me.x, SRC[1] - me.y, SRC[2] - EYE);
+  readout.innerHTML = `Nearest point <b>${n.label}</b> (${n.d.toFixed(2)} m)<br>To the source <b>${d.toFixed(2)} m</b>`;
+}
+updateReadout();
+</script>

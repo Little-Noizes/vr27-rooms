@@ -1,0 +1,90 @@
+{
+  "title": "QMUL classroom",
+  "model": "classroom.glb",
+  "environment": "env.hdr",
+  "lightmap": {
+    "file": "lightmap.png",
+    "scale": 10.7821
+  },
+  "exposure_ev": 0.4,
+  "env_intensity": 1.0,
+  "views": {
+    "back": {
+      "pos": [
+        7.6,
+        7.1
+      ],
+      "target": [
+        2.5,
+        0.5,
+        1.2
+      ]
+    },
+    "front": {
+      "pos": [
+        1.0,
+        0.9
+      ],
+      "target": [
+        7.0,
+        6.5,
+        1.0
+      ]
+    },
+    "window": {
+      "pos": [
+        8.4,
+        4.0
+      ],
+      "target": [
+        0.0,
+        3.0,
+        1.4
+      ]
+    }
+  },
+  "walk_bounds": {
+    "x0": 0.3,
+    "x1": 8.7,
+    "y0": 0.3,
+    "y1": 7.2,
+    "alcove_x0": 6.3,
+    "alcove_y1": 7.7
+  },
+  "_note": "Lightmap from the 17 Oct 2026 photoreal bake (HDRI rooitou_park, 4096 direct / 2048 indirect, OIDN). lightmap.scale is written by post_lightmap.py.",
+  "sky": {
+    "file": "sky.hdr",
+    "gain": 1.0
+  },
+  "bloom": {
+    "strength": 0.15,
+    "threshold": 0.95
+  },
+  "audio": {
+    "manifest": "audio/manifest.json",
+    "ir_base": "audio/",
+    "dry": "audio/dry.wav",
+    "ir_scale": 1.1613085458250683,
+    "ear_height": 1.5
+  },
+  "version": "scn4-20261018",
+  "ceiling_tiles": {
+    "map": "ceiling_tiles.jpg",
+    "normal": "ceiling_tiles_n.jpg",
+    "size": [
+      9.0,
+      8.0
+    ],
+    "light_gain": 1.0,
+    "_note": "600 x 600 lay-in tiles, 24 mm T-bar, grid lines at x = 0.3 + 0.6k, y = 0.4 + 0.6k (acoustic frame). Visual only. Built by make_ceiling_tiles.py."
+  },
+  "scene_visuals": {
+    "SCN000_Original": {
+      "caption": "Plasterboard ceiling \u00b7 measured IRs \u00b7 T20 about 1.9 s"
+    },
+    "SCN001_AcousticCeiling": {
+      "ceiling": "tiles",
+      "caption": "600 x 600 tiles, NRC 0.9 \u00b7 simulated IRs \u00b7 T20 about 0.65 s"
+    }
+  }
+}

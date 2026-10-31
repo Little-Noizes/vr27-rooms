@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yoga Studio · E-LAB VR27</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="../../shared/nav.js" defer></script>
+<style>
+/* Layout: full-bleed 3D room, one control console docked top-left (bottom sheet on phones), plan inset inside it. */
+:root {
+  --bg: #ebe8e2;          /* page ground behind the 3D view */
+  --panel: #faf8f4ee;     /* console surface */
+  --ink: #22201c;
+  --muted: #67625a;
+  --line: #d3cdc3;
+  --mat: #6a7f5c;         /* yoga-mat green: active controls */
+  --timber: #b07a3e;      /* parquet: listener, sources */
+  --on-mat: #ffffff;
+  --plan-floor: #e6dccb;
+  --font-ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #13120f; --panel: #1c1a16ee; --ink: #ebe6dc; --muted: #a39b8e; --line: #36322b;
+  --mat: #93ad80; --timber: #dba463; --on-mat: #10140d; --plan-floor: #2a261f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #13120f; --panel: #1c1a16ee; --ink: #ebe6dc; --muted: #a39b8e; --line: #36322b;
+  --mat: #93ad80; --timber: #dba463; --on-mat: #10140d; --plan-floor: #2a261f; color-scheme: dark }
+
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; overflow: hidden; margin: 0; }
+#view { position: fixed; inset: 0; touch-action: none; cursor: grab; }
+#view:active { cursor: grabbing; }
+#view canvas { display: block; width: 100%; height: 100%; }
+.console {
+  position: fixed; z-index: 2;
+  top: calc(12px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px));
+  width: min(350px, calc(100% - 24px)); max-height: calc(100% - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto; background: var(--panel); backdrop-filter: blur(8px); box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 12px;
+}
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+.group { display: grid; gap: 5px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg.two-rows { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+.seg button { font: inherit; font-size: 13px; padding: 7px 4px; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.seg:not(.two-rows) button + button { border-left: 1px solid var(--line); }
+.seg.two-rows button:nth-child(even) { border-left: 1px solid var(--line); }
+.seg.two-rows button:nth-child(n+3) { border-top: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--mat); color: var(--on-mat); font-weight: 500; }
+.seg button small { display: block; font-family: var(--font-data); font-size: 10.5px; opacity: 0.8; font-variant-numeric: tabular-nums; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--timber); outline-offset: 1px; }
+.play { font: inherit; font-weight: 600; font-size: 14px; padding: 9px 14px; border-radius: 7px; border: 1px solid var(--mat);
+  background: var(--mat); color: var(--on-mat); cursor: pointer; min-width: 92px; }
+.play[aria-pressed="true"] { background: transparent; color: var(--mat); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.slider { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 140px; }
+.slider input { flex: 1; accent-color: var(--mat); min-width: 0; }
+.slider output { font-family: var(--font-data); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+.slider .label { min-width: 58px; }
+#plan { width: 100%; height: auto; display: block; border-radius: 6px; background: var(--plan-floor); cursor: crosshair; }
+.readout { font-family: var(--font-data); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1.5; }
+.readout b { color: var(--ink); font-weight: 500; }
+#status { font-size: 12px; color: var(--muted); min-height: 1.4em; }
+#status.err { color: #c0392b; }
+details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+details p { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 6px 0 0; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 1; color: var(--muted); font-family: var(--font-data); font-size: 13px; pointer-events: none; padding-inline: max(16px, env(safe-area-inset-left, 0px)); text-align: center; }
+.toggle { font-size: 12px; background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 3px 8px; cursor: pointer; font-family: var(--font-ui); }
+@media (max-width: 640px) {
+  .console { top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); left: max(10px, env(safe-area-inset-left, 0px));
+    width: auto; right: max(10px, env(safe-area-inset-right, 0px)); max-height: 52%; }
+}
+.console.min > :not(.head) { display: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="view" aria-label="3D view of the yoga studio. Drag to look, W A S D to walk."></div>
+<div id="loading">Loading the room…</div>
+
+<section class="console" id="console" aria-label="Listening controls">
+  <div class="head">
+    <div>
+      <h1>Yoga Studio</h1>
+      <p class="sub">Treble hybrid IRs · 3 sources · 38 points at 0.8 m (seated on a mat)</p>
+    </div>
+    <button class="toggle" id="minBtn" type="button" aria-expanded="true">Hide</button>
+  </div>
+
+  <div class="row">
+    <button class="play" id="play" type="button" aria-pressed="false">Play</button>
+    <label class="slider" for="vol"><span class="label">Level</span>
+      <input id="vol" type="range" min="-30" max="12" step="1" value="0">
+      <output id="volOut" for="vol">0 dB</output></label>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblScene">Treatment</span>
+    <div class="seg two-rows" role="group" aria-labelledby="lblScene" id="scene">
+      <button type="button" data-v="0" aria-pressed="true">None<small>T20 1.29 s</small></button>
+      <button type="button" data-v="1" aria-pressed="false">Curtains<small>T20 0.78 s</small></button>
+      <button type="button" data-v="2" aria-pressed="false">+ Ceiling<small>T20 0.34 s</small></button>
+      <button type="button" data-v="3" aria-pressed="false">+ Walls<small>T20 0.26 s</small></button>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblSrc">Music from</span>
+    <div class="seg" role="group" aria-labelledby="lblSrc" id="speakers">
+      <button type="button" data-v="L" aria-pressed="false" title="Music from the left wall speaker only">L speaker</button>
+      <button type="button" data-v="LR" aria-pressed="true" title="Music from both wall speakers">Both</button>
+      <button type="button" data-v="R" aria-pressed="false" title="Music from the right wall speaker only">R speaker</button>
+    </div>
+    <label class="slider" for="bal"><span class="label">Music</span>
+      <input id="bal" type="range" min="-24" max="6" step="1" value="-8">
+      <output id="balOut" for="bal">−8 dB</output></label>
+    <label class="slider" for="voc"><span class="label">Teacher</span>
+      <input id="voc" type="range" min="-24" max="6" step="1" value="0">
+      <output id="vocOut" for="voc">0 dB</output></label>
+  </div>
+
+  <div class="row">
+    <div class="group" style="flex: 2; min-width: 150px">
+      <span class="label" id="lblMode">Sound</span>
+      <div class="seg" role="group" aria-labelledby="lblMode" id="mode">
+        <button type="button" data-v="room" aria-pressed="true">Room</button>
+        <button type="button" data-v="dry" aria-pressed="false">Direct only</button>
+      </div>
+    </div>
+    <div class="group" style="flex: 1; min-width: 90px">
+      <span class="label" id="lblPts">IR points</span>
+      <div class="seg" role="group" aria-labelledby="lblPts" id="points">
+        <button type="button" data-v="on" aria-pressed="true">Show</button>
+        <button type="button" data-v="off" aria-pressed="false">Hide</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblView">Go to</span>
+    <div class="seg two-rows" role="group" aria-labelledby="lblView" id="views">
+      <button type="button" data-v="back" aria-pressed="false">Back</button>
+      <button type="button" data-v="centre" aria-pressed="false">Centre</button>
+      <button type="button" data-v="front_row" aria-pressed="false">Front row</button>
+      <button type="button" data-v="teacher" aria-pressed="false">Teacher</button>
+    </div>
+  </div>
+
+  <svg id="plan" viewBox="0 0 100 64" role="img" aria-label="Room plan: teaching end and big window at the right. Click to move there."></svg>
+  <div class="readout" id="readout">—</div>
+  <div id="status" role="status" aria-live="polite">Press Play to start. Headphones on.</div>
+
+  <details>
+    <summary>Controls and notes</summary>
+    <p>Drag to look around. W and S (or the up and down arrows) walk, A and D step sideways, Q and E (or left and right arrows) turn. Click an IR point in the room or on the plan to sit there. Space plays or stops.</p>
+    <p>Treatment steps: none (masonry, timber floor, corrugated metal soffit); acoustic curtains on both long walls; plus Autex QuietSpace 100 mm direct fixed to the soffit; plus QuietSpace 25 mm wall panels on the rear walls. Switching changes the IRs and the model together.</p>
+    <p>IRs simulated in Treble (hybrid, wave solver to 710 Hz), 2nd order ambisonic, played here at 1st order. One level reference across all scenarios and sources. Speakers modelled as Genelec 8030A directivity (stand-in for the KRK Classic 5), teacher as a speech source.</p>
+    <p>Each speaker has its own IR set, so L only, R only and both are true one- or two-speaker renderings (no level compensation: one speaker is about 3 dB quieter, as in the room). L_spk.wav feeds the left speaker and R_spk.wav the right. (Current files are identical, so the music is effectively mono.) Sliders at their minimum switch that sound off completely. Position switches to the nearest IR point (the grid is not rectangular, so no 4-point blend).</p>
+  </details>
+</section>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { SeatAudio } from "./vr27engine.js";
+
+// output meter: tap everything that reaches the speakers
+const _connect = AudioNode.prototype.connect;
+AudioNode.prototype.connect = function (t, ...a) {
+  if (t instanceof AudioDestinationNode) {
+    const c = this.context;
+    if (!c.__meter) { c.__meter = new AnalyserNode(c, { fftSize: 2048 }); }
+    _connect.call(this, c.__meter);
+  }
+  return _connect.call(this, t, ...a);
+};
+const meterBuf = new Float32Array(2048);
+function outLevel(ctx) {
+  const a = ctx?.__meter; if (!a) return null;
+  a.getFloatTimeDomainData(meterBuf); let s = 0, pk = 0;
+  for (const v of meterBuf) { s += v * v; pk = Math.max(pk, Math.abs(v)); }
+  return { rms: 20 * Math.log10(Math.sqrt(s / meterBuf.length) + 1e-9), pk: 20 * Math.log10(pk + 1e-9) };
+}
+
+// ------------------------------------------------------------------ geometry (acoustic frame: x towards the teaching end, y left, z up)
+const ROOM = { x0: -4.554, x1: 4.561, y0: -2.744, y1: 2.744, xj: -0.459, yi: -1.564 };   // store notch: x < xj, y < yi
+const BOUND = { x0: -4.25, x1: 4.25, y0: -2.45, y1: 2.45 };
+const EYE = 0.8;
+const LM_INTENSITY = 47.7045;   // pi * lightmap scale (15.185)
+const SCENES = [   // index = manifest order
+  { show: [] }, { show: ["CURTAINS"] }, { show: ["CURTAINS", "CEILING_PANELS"] }, { show: ["CURTAINS", "CEILING_PANELS", "WALL_PANELS"] },
+];
+const VIEWS = {
+  back: { pos: [-4.1, 0.0], target: [4.5, 0.0, 0.9] }, centre: { pos: [0.0, 0.0], target: [4.5, 0.0, 0.8] },
+  front_row: { pos: [2.4, 1.6], target: [3.2, 0.0, 0.6] }, teacher: { pos: [4.05, 0.75], target: [-4.5, 0.0, 0.8] },
+};
+const tj = (x, y, z) => new THREE.Vector3(x, z, -y);   // acoustic -> three.js
+const glassMat = () => new THREE.MeshBasicMaterial({ color: 0xcfe0e6, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide });
+
+const MAN = Object.fromEntries(await Promise.all(["S01", "S02", "S03"].map(async (s) => [s, await fetch(`audio/manifest_${s}.json`).then((r) => r.json())])));
+const SRCS = ["S01", "S02", "S03"].map((s) => ({ id: s, label: MAN[s].sources[0].label, p: MAN[s].sources[0].position }));
+const RECV = MAN.S01.receivers;
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ------------------------------------------------------------------ 3D
+const host = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = 1.0;
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 200);
+function resize() { const w = host.clientWidth, h = host.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize); resize();
+function setBg() { scene.background = new THREE.Color(css("--bg")); }
+setBg(); matchMedia("(prefers-color-scheme: dark)").addEventListener("change", setBg);
+
+const groups = {};
+async function loadGlb(url, loader) {
+  const r = await fetch(url); if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+  const s = atob((await r.text()).trim()), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return loader.parseAsync(u.buffer, "");
+}
+(async () => {
+  const msg = document.getElementById("loading");
+  let step = "download";
+  try {
+    const lmTex = await new THREE.TextureLoader().loadAsync("model/lightmap.jpg");
+    lmTex.flipY = false; lmTex.channel = 1; lmTex.colorSpace = THREE.SRGBColorSpace;
+    step = "mesh decoder"; await MeshoptDecoder.ready;
+    const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+    step = "room"; const g = await loadGlb("model/yogastudio.glb.b64.txt", loader);
+    let noLM = 0;
+    g.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      let top = o; while (top.parent && top.parent !== g.scene) top = top.parent;
+      groups[top.name] = top;
+      const hasLM = !!o.geometry.attributes.uv1; if (!hasLM) noLM++;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const out = mats.map((m) => {
+        if (top.name === "GLASS" || m.name === "Glass") return glassMat();
+        return new THREE.MeshBasicMaterial({ map: m.map, color: m.color, transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest,
+          side: m.side, ...(hasLM ? { lightMap: lmTex, lightMapIntensity: LM_INTENSITY } : {}) });
+      });
+      o.material = Array.isArray(o.material) ? out : out[0];
+    });
+    if (noLM) console.warn(`VR27: ${noLM} mesh part(s) without lightmap UVs, shown unlit`);
+    scene.add(g.scene);
+    applyScene(rig.scn);
+    msg.hidden = true;
+    // teacher (RenderPeople "Naomi", seated; already placed in the glTF), not lightmapped: unlit, slightly dimmed to sit in the baked room
+    loadGlb("model/teacher.glb.b64.txt", loader).then((t) => {
+      t.scene.traverse((o) => { if (o.isMesh) o.material = new THREE.MeshBasicMaterial({ map: o.material.map, color: new THREE.Color(0.9, 0.9, 0.9) }); });
+      scene.add(t.scene);
+    }).catch((e) => console.warn("VR27: teacher did not load", e));
+  } catch (err) {
+    console.error(err);
+    msg.textContent = `The 3D model did not load (${step}: ${err?.message ?? err}). Audio still works from the plan.`;
+  }
+})();
+function applyScene(i) {
+  for (const n of ["CURTAINS", "CEILING_PANELS", "WALL_PANELS"]) if (groups[n]) groups[n].visible = SCENES[i].show.includes(n);
+}
+
+// IR points (floor discs) and source markers
+const markers = new THREE.Group(); scene.add(markers);
+const discGeo = new THREE.CircleGeometry(0.09, 24).rotateX(-Math.PI / 2);
+const matIdle = new THREE.MeshBasicMaterial({ color: 0x6a7f5c, transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false });
+const matOn = new THREE.MeshBasicMaterial({ color: 0xdba463, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false });
+const disc = new Map();
+for (const r of RECV) {
+  const m = new THREE.Mesh(discGeo, matIdle); m.position.copy(tj(r.position[0], r.position[1], 0.03));
+  m.userData.id = r.id; m.renderOrder = 2; markers.add(m); disc.set(r.id, m);
+}
+
+// ------------------------------------------------------------------ listener + navigation
+const me = { x: 0, y: 0, yaw: 0, pitch: 0 };   // yaw 0 = facing the teaching end (+x)
+function goView(k) {
+  const v = VIEWS[k]; me.x = v.pos[0]; me.y = v.pos[1];
+  const d = [v.target[0] - me.x, v.target[1] - me.y, v.target[2] - EYE];
+  me.yaw = -Math.atan2(d[1], d[0]); me.pitch = Math.atan2(d[2], Math.hypot(d[0], d[1]));
+}
+goView("back");
+const keys = new Set();
+addEventListener("keydown", (e) => {
+  if (e.target.closest?.("input")) return;
+  if (e.code === "Space") { e.preventDefault(); togglePlay(); return; }
+  keys.add(e.code);
+});
+addEventListener("keyup", (e) => keys.delete(e.code));
+// a key released while focus is elsewhere (another window, the app around the page) never sends keyup: forget all keys
+const releaseAll = () => { keys.clear(); drag = null; };
+addEventListener("blur", releaseAll);
+document.addEventListener("visibilitychange", releaseAll);
+document.getElementById("console").addEventListener("pointerdown", () => keys.clear());
+let drag = null;
+host.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, yaw: me.yaw, pitch: me.pitch, moved: false }; host.setPointerCapture(e.pointerId); });
+host.addEventListener("pointermove", (e) => {
+  if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 4) drag.moved = true;
+  me.yaw = drag.yaw - dx * 0.004; me.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + dy * 0.004));
+});
+host.addEventListener("pointerup", (e) => { if (drag && !drag.moved) pick(e); drag = null; });
+host.addEventListener("pointercancel", () => { drag = null; });
+host.addEventListener("lostpointercapture", () => { drag = null; });
+const ray = new THREE.Raycaster();
+function pick(e) {
+  const r = host.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+  const hit = ray.intersectObjects([...disc.values()])[0];
+  if (hit) goSeat(hit.object.userData.id);
+}
+function goSeat(id) { const r = RECV.find((q) => q.id === id); me.x = r.position[0]; me.y = r.position[1]; }
+const clampMe = () => {
+  me.x = Math.min(BOUND.x1, Math.max(BOUND.x0, me.x)); me.y = Math.min(BOUND.y1, Math.max(BOUND.y0, me.y));
+  if (me.x < ROOM.xj - 0.3 && me.y < ROOM.yi + 0.3) {   // keep out of the store behind the rear-right wall
+    if (ROOM.xj - 0.3 - me.x < ROOM.yi + 0.3 - me.y) me.x = ROOM.xj - 0.3; else me.y = ROOM.yi + 0.3;
+  }
+};
+
+// ------------------------------------------------------------------ plan inset (teaching end on the right, left wall at the top)
+const plan = document.getElementById("plan"), NS = "http://www.w3.org/2000/svg";
+const PW = 100, PH = 64, pad = 4;
+const ps = Math.min((PW - 2 * pad) / (ROOM.x1 - ROOM.x0), (PH - 2 * pad) / (ROOM.y1 - ROOM.y0));
+const ox = (PW - ps * (ROOM.x1 - ROOM.x0)) / 2, oy = (PH - ps * (ROOM.y1 - ROOM.y0)) / 2;
+const P = (x, y) => [ox + (x - ROOM.x0) * ps, oy + (ROOM.y1 - y) * ps];
+const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); plan.appendChild(e); return e; };
+const outline = [[ROOM.x0, ROOM.y1], [ROOM.x1, ROOM.y1], [ROOM.x1, ROOM.y0], [ROOM.xj, ROOM.y0], [ROOM.xj, ROOM.yi], [ROOM.x0, ROOM.yi]];
+el("path", { d: "M" + outline.map((p) => P(...p).join(",")).join(" L") + " Z", fill: "none", stroke: "var(--muted)", "stroke-width": 0.5 });
+const curtainLine = el("path", { d: `M${P(-0.5, ROOM.y1).join(",")} L${P(4.13, ROOM.y1).join(",")} M${P(-0.5, ROOM.y0).join(",")} L${P(4.13, ROOM.y0).join(",")}`,
+  fill: "none", stroke: "var(--mat)", "stroke-width": 1.2, "stroke-dasharray": "1.4 0.8", opacity: 0 });
+const pd = new Map();
+for (const r of RECV) { const [a, b] = P(r.position[0], r.position[1]); pd.set(r.id, el("circle", { cx: a, cy: b, r: 0.9, fill: "var(--mat)", opacity: 0.55 })); }
+for (const s of SRCS) {
+  const [a, b] = P(s.p[0], s.p[1]); el("circle", { cx: a, cy: b, r: 1.5, fill: "var(--timber)" });
+  const t = el("text", { x: a - 2.6, y: b + (s.id === "S03" ? 4.4 : s.p[1] > 0 ? 4.2 : -2.4), "font-size": 2.8, fill: "var(--muted)", "font-family": "IBM Plex Mono, monospace" });
+  t.textContent = s.id === "S03" ? "T" : s.p[1] > 0 ? "L" : "R";
+}
+const meDot = el("circle", { r: 1.5, fill: "var(--timber)", stroke: "var(--ink)", "stroke-width": 0.4 });
+const meDir = el("line", { stroke: "var(--ink)", "stroke-width": 0.6, "stroke-linecap": "round" });
+plan.addEventListener("click", (e) => {
+  const pt = plan.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(plan.getScreenCTM().inverse());
+  me.x = ROOM.x0 + (q.x - ox) / ps; me.y = ROOM.y1 - (q.y - oy) / ps; clampMe();
+});
+
+// ------------------------------------------------------------------ audio: three SeatAudio engines on one clock
+const statusEl = document.getElementById("status");
+const say = (t, err = false) => { statusEl.textContent = t; statusEl.classList.toggle("err", err); };
+const FEED = { S01: "P01_music_L", S02: "P01_music_R", S03: "P02_teacher_voice" };   // L_spk.wav / R_spk.wav from 02 Audio\anechoic
+const rig = {
+  ctx: null, eng: {}, playing: false, scn: 0, mode: "room", vol: 0, bal: -8, voc: 0, spk: "LR", buffers: {},
+  // slider minimum = off (silence), not just quiet
+  srcVol(s) {
+    const OFF = -Infinity;
+    if (this.vol <= -30) return OFF;
+    if (s === "S03") return this.voc <= -24 ? OFF : this.vol + this.voc;
+    if (this.bal <= -24 || !this.spk.includes(s === "S01" ? "L" : "R")) return OFF;
+    return this.vol + this.bal;
+  },
+  async init() {
+    this.ctx = new AudioContext({ latencyHint: "playback" });
+    say("Building the binaural decoders…");
+    for (const s of ["S01", "S02", "S03"]) {
+      const e = new SeatAudio({ manifest: MAN[s], irBase: "audio/", ctx: this.ctx });
+      e.onstatus = (t) => say(t, true); e.blend = "nearest"; e.mode = this.mode; e.vol = this.srcVol(s); e.scn = this.scn;
+      if (s === "S01") e.onweights = (w) => showWeights(w.corners);
+      await e.prepare(); this.eng[s] = e;
+    }
+  },
+  async load(name) {
+    if (this.buffers[name]) return this.buffers[name];
+    const r = await fetch(`audio/${name}.mp3`); if (!r.ok) throw new Error(`${name}.mp3 did not load (${r.status})`);
+    return (this.buffers[name] = await this.ctx.decodeAudioData(await r.arrayBuffer()));
+  },
+  async start() {
+    if (!this.ctx) await this.init();
+    if (this.ctx.state === "suspended") await this.ctx.resume();
+    say("Loading the tracks…");
+    const bufs = Object.fromEntries(await Promise.all(Object.entries(FEED).map(async ([s, n]) => [s, await this.load(n)])));
+    this.pos(me.x, me.y);
+    const when = this.ctx.currentTime + 0.1;
+    for (const s in this.eng) this.eng[s].play(bufs[s], when, 0, 1);
+    this.playing = true; say(`Playing · ${sceneLabel()}`);
+  },
+  stop() { for (const s in this.eng) this.eng[s].stop(); this.playing = false; say("Stopped"); },
+  pos(x, y) { for (const s in this.eng) this.eng[s].setPosition(x, y, EYE); if (!this.eng.S01) showWeights([{ id: nearest(x, y).id, w: 1 }]); },
+  levels() { for (const s in this.eng) this.eng[s].setVolume(this.srcVol(s)); },
+};
+const sceneLabel = () => document.querySelector(`#scene button[data-v="${rig.scn}"]`).firstChild.textContent;
+
+async function togglePlay() {
+  const b = document.getElementById("play");
+  try {
+    if (rig.playing) { rig.stop(); b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); }
+    else { b.textContent = "Stop"; b.setAttribute("aria-pressed", "true"); await rig.start(); }
+  } catch (err) { console.error(err); say(err.message, true); b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); rig.playing = false; }
+}
+document.getElementById("play").addEventListener("click", togglePlay);
+
+function segment(id, fn, toggle = false) {
+  const g = document.getElementById(id);
+  g.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (toggle) b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"));
+    else for (const x of g.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+    fn(b.dataset.v, b);
+  });
+}
+segment("scene", async (v) => {
+  const i = +v; rig.scn = i; applyScene(i); curtainLine.setAttribute("opacity", i > 0 ? 0.9 : 0);
+  if (rig.eng.S01) {
+    say(`Loading ${sceneLabel()}…`);
+    try { await Promise.all(Object.values(rig.eng).map((e) => e.setScenario(i))); say(rig.playing ? `Playing · ${sceneLabel()}` : sceneLabel()); }
+    catch (e) { say(e.message, true); }
+  }
+});
+segment("speakers", (v) => { rig.spk = v; rig.levels(); });
+segment("points", (v) => { markers.visible = v === "on"; });
+segment("mode", (v) => { rig.mode = v; for (const e of Object.values(rig.eng)) e.setMode(v); });
+segment("views", (v, b) => { goView(v); setTimeout(() => b.setAttribute("aria-pressed", "false"), 300); });
+const dB = (v, min) => v <= min ? "off" : _dB(v);
+const _dB = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v)} dB`;
+const vol = document.getElementById("vol"), volOut = document.getElementById("volOut");
+vol.addEventListener("input", () => { rig.vol = +vol.value; volOut.textContent = dB(+vol.value, -30); rig.levels(); });
+const bal = document.getElementById("bal"), balOut = document.getElementById("balOut");
+bal.addEventListener("input", () => { rig.bal = +bal.value; balOut.textContent = dB(+bal.value, -24); rig.levels(); });
+const voc = document.getElementById("voc"), vocOut = document.getElementById("vocOut");
+voc.addEventListener("input", () => { rig.voc = +voc.value; vocOut.textContent = dB(+voc.value, -24); rig.levels(); });
+document.getElementById("minBtn").addEventListener("click", (e) => {
+  const c = document.getElementById("console"), min = c.classList.toggle("min");
+  e.target.textContent = min ? "Show" : "Hide"; e.target.setAttribute("aria-expanded", String(!min));
+});
+
+function nearest(x, y) { let best = RECV[0], bd = Infinity; for (const r of RECV) { const d = Math.hypot(r.position[0] - x, r.position[1] - y); if (d < bd) { bd = d; best = r; } } best.d = bd; return best; }
+function showWeights(corners) {
+  const on = new Map(corners.filter((c) => c.w > 0.001).map((c) => [c.id, c.w]));
+  for (const [id, m] of disc) m.material = on.has(id) ? matOn : matIdle;
+  for (const [id, d] of pd) { const w = on.get(id); d.setAttribute("fill", w ? "var(--timber)" : "var(--mat)"); d.setAttribute("r", w ? 0.9 + 1.1 * w : 0.9); d.setAttribute("opacity", w ? 1 : 0.55); }
+}
+
+// ------------------------------------------------------------------ frame loop
+const readout = document.getElementById("readout");
+const clock = new THREE.Clock(); let lastSent = "";
+const fwd = new THREE.Vector3(), up = new THREE.Vector3();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05), sp = 1.2 * dt;
+  if (keys.has("KeyQ") || keys.has("ArrowLeft")) me.yaw -= 1.6 * dt;
+  if (keys.has("KeyE") || keys.has("ArrowRight")) me.yaw += 1.6 * dt;
+  const c = Math.cos(me.yaw), s = Math.sin(me.yaw);
+  let mv = 0, st = 0;
+  if (keys.has("KeyW") || keys.has("ArrowUp")) mv += 1;
+  if (keys.has("KeyS") || keys.has("ArrowDown")) mv -= 1;
+  if (keys.has("KeyD")) st += 1;
+  if (keys.has("KeyA")) st -= 1;
+  if (mv || st) { me.x += (c * mv - s * st) * sp; me.y += (-s * mv - c * st) * sp; clampMe(); }
+  camera.position.copy(tj(me.x, me.y, EYE));
+  const dir = tj(Math.cos(me.yaw) * Math.cos(me.pitch), -Math.sin(me.yaw) * Math.cos(me.pitch), Math.sin(me.pitch));
+  camera.lookAt(camera.position.clone().add(dir));
+  renderer.render(scene, camera);
+  const key = `${me.x.toFixed(3)},${me.y.toFixed(3)}`;
+  if (key !== lastSent) { lastSent = key; rig.pos(me.x, me.y); updateReadout(); }
+  if (rig.eng.S01) { camera.getWorldDirection(fwd); up.set(0, 1, 0).applyQuaternion(camera.quaternion); for (const e of Object.values(rig.eng)) e.setOrientation(fwd, up); }
+  const lv = outLevel(rig.ctx), mEl = document.getElementById("meter");
+  if (mEl && lv && (clock.elapsedTime % 0.25) < dt) mEl.textContent = `Output ${lv.rms.toFixed(1)} dBFS rms · peak ${lv.pk.toFixed(1)} · ${rig.ctx.state} · ${rig.ctx.sampleRate} Hz`;
+  const [a, b] = P(me.x, me.y); meDot.setAttribute("cx", a); meDot.setAttribute("cy", b);
+  meDir.setAttribute("x1", a); meDir.setAttribute("y1", b);
+  meDir.setAttribute("x2", a + Math.cos(me.yaw) * 4); meDir.setAttribute("y2", b + Math.sin(me.yaw) * 4);
+});
+function updateReadout() {
+  const n = nearest(me.x, me.y), t = SRCS[2].p, d = Math.hypot(t[0] - me.x, t[1] - me.y, t[2] - EYE);
+  readout.innerHTML = `IR point <b>${n.label}</b> (${n.d.toFixed(2)} m away)<br>To the teacher <b>${d.toFixed(2)} m</b><br><span id="meter">Output —</span>`;
+}
+updateReadout();
+</script>

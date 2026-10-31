@@ -1,0 +1,116 @@
+{
+  "title": "Great Hall (demo)",
+  "subtitle": "Cycles-baked lighting \u00b7 measured IRs from another hall (demo pairing)",
+  "model": "greathall.glb",
+  "_note": "Lightmap baked in Blender Cycles (bake_hall.py): hall atlas + one baked reference per seat mesh, per-seat brightness from probes. Positions are acoustic coordinates, (x, y, z)ac = (X, -Z, Y)three.js.",
+  "exposure_ev": 0.0,
+  "env_intensity": 1.0,
+  "bloom": {
+    "strength": 0.15,
+    "threshold": 0.95
+  },
+  "views": {
+    "stalls": {
+      "label": "Stalls centre",
+      "pos": [
+        0.0,
+        -4.0
+      ],
+      "target": [
+        0.0,
+        -13.0,
+        0.4
+      ]
+    },
+    "front": {
+      "label": "Front row",
+      "pos": [
+        -2.0,
+        -9.5
+      ],
+      "target": [
+        0.0,
+        -13.0,
+        0.3
+      ]
+    },
+    "back": {
+      "label": "Back of grid",
+      "pos": [
+        3.0,
+        2.0
+      ],
+      "target": [
+        0.0,
+        -13.0,
+        0.4
+      ]
+    },
+    "side": {
+      "label": "Side aisle",
+      "pos": [
+        -5.8,
+        -2.0
+      ],
+      "target": [
+        0.0,
+        -13.0,
+        0.4
+      ]
+    }
+  },
+  "default_view": "stalls",
+  "walk_bounds": {
+    "x0": -6.3,
+    "x1": 6.6,
+    "y0": -10.3,
+    "y1": 2.6
+  },
+  "floor": {
+    "materials": [
+      "PlanksFloor",
+      "PlanksStage"
+    ],
+    "eye_height": 1.15,
+    "probe_top": 2.5
+  },
+  "toggles": [
+    {
+      "id": "curtain",
+      "label": "Curtain closed",
+      "show": [
+        "Curtain_MainShut"
+      ],
+      "hide": [
+        "Curtain_MainOpen"
+      ],
+      "default": true
+    }
+  ],
+  "props": [
+    {
+      "file": "cellist.glb",
+      "pos": [
+        0.0,
+        -13.0,
+        -0.4415
+      ],
+      "yaw_deg": 180,
+      "env_intensity": 3.14
+    }
+  ],
+  "source_visual": "none",
+  "lightmap": {
+    "file": "lightmap.jpg",
+    "scale": 11.1922,
+    "instanced_file": "seat_lightmap.jpg"
+  },
+  "environment": "env.hdr",
+  "audio": {
+    "manifest": "audio/manifest.json",
+    "ir_base": "audio/",
+    "dry": "audio/S01_Cello.mp3",
+    "ir_scale": 1,
+    "ear_height": -1.5
+  }
+}

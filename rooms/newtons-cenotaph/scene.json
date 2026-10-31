@@ -1,0 +1,86 @@
+{
+  "title": "Newton's Cenotaph",
+  "subtitle": "Boull\u00e9e, 1784. Day effect: daylight through the vault draws the sky over Kensington on the night Newton died.",
+  "version": "nc01b",
+  "model": "newtons_cenotaph.glb",
+  "environment": "env_plinth.hdr",
+  "lightmap": {
+    "file": "lightmap.jpg",
+    "scale": 0.42795
+  },
+  "camera_far": 400,
+  "env_intensity": 0.2,
+  "exposure_ev": 3.5,
+  "skycap_gain": 1.0,
+  "bloom": {
+    "strength": 0.55,
+    "radius": 0.45,
+    "threshold": 0.85
+  },
+  "views": {
+    "entry": {
+      "label": "From the tunnel",
+      "pos": [
+        -21.0,
+        0.0
+      ],
+      "target": [
+        0.0,
+        0.0,
+        12.0
+      ]
+    },
+    "plinth": {
+      "label": "At the plinth",
+      "pos": [
+        7.5,
+        -4.0
+      ],
+      "target": [
+        0.0,
+        0.0,
+        1.8
+      ]
+    },
+    "tomb": {
+      "label": "Newton's sky",
+      "pos": [
+        2.6,
+        0.0
+      ],
+      "target": [
+        -6.0,
+        0.0,
+        120.0
+      ]
+    },
+    "back": {
+      "label": "Back to the tunnel",
+      "pos": [
+        16.0,
+        5.0
+      ],
+      "target": [
+        -40.0,
+        0.0,
+        6.0
+      ]
+    }
+  },
+  "default_view": "entry",
+  "walk_radius": 22.0,
+  "walk_bounds": {
+    "x0": -17.5,
+    "x1": 17.5,
+    "y0": -17.5,
+    "y1": 17.5
+  },
+  "floor": {
+    "eye_height": 1.6,
+    "materials": [
+      "FLOOR_STONE",
+      "PLINTH_STONE"
+    ],
+    "probe_top": 3.0
+  }
+}

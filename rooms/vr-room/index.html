@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VR Room · E-LAB VR27</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="../../shared/nav.js" defer></script>
+<style>
+/* Layout: full-bleed 3D room, one control console docked top-left (bottom sheet on phones), plan inset inside it. */
+:root {
+  --bg: #e9edf2;          /* page ground behind the 3D view */
+  --panel: #f7f9fbee;     /* console surface */
+  --ink: #18212c;         /* text */
+  --muted: #5b6876;       /* secondary text */
+  --line: #c7d0da;        /* hairlines, idle control borders */
+  --raft: #24508f;        /* the room's blue ceiling rafts: active controls */
+  --cone: #c99a00;        /* KRK cone yellow: listener / sound sources */
+  --on-raft: #ffffff;
+  --plan-floor: #dfe5ec;
+  --font-ui: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f141b; --panel: #161d27ee; --ink: #e5ebf2; --muted: #93a1b1; --line: #2c3745;
+  --raft: #4d82d1; --cone: #f2c230; --on-raft: #0b1018; --plan-floor: #1f2833; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f141b; --panel: #161d27ee; --ink: #e5ebf2; --muted: #93a1b1; --line: #2c3745;
+  --raft: #4d82d1; --cone: #f2c230; --on-raft: #0b1018; --plan-floor: #1f2833; color-scheme: dark }
+
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; overflow: hidden; }
+#view { position: fixed; inset: 0; touch-action: none; cursor: grab; }
+#view:active { cursor: grabbing; }
+#view canvas { display: block; width: 100%; height: 100%; }
+
+.console {
+  position: fixed; z-index: 2;
+  top: calc(12px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px));
+  width: min(330px, calc(100% - 24px)); max-height: calc(100% - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto; background: var(--panel); backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 12px;
+}
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+.group { display: grid; gap: 5px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; padding: 7px 4px; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--raft); color: var(--on-raft); font-weight: 500; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--cone); outline-offset: 1px; }
+.play { font: inherit; font-weight: 600; font-size: 14px; padding: 9px 14px; border-radius: 7px; border: 1px solid var(--raft);
+  background: var(--raft); color: var(--on-raft); cursor: pointer; min-width: 92px; }
+.play[aria-pressed="true"] { background: transparent; color: var(--raft); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.slider { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 140px; }
+.slider input { flex: 1; accent-color: var(--raft); }
+.slider output { font-family: var(--font-data); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+#plan { width: 100%; height: auto; display: block; border-radius: 6px; background: var(--plan-floor); cursor: crosshair; }
+.readout { font-family: var(--font-data); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1.5; }
+.readout b { color: var(--ink); font-weight: 500; }
+#status { font-size: 12px; color: var(--muted); min-height: 1.4em; }
+#status.err { color: #c0392b; }
+.hint { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 0; }
+details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+details p { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 6px 0 0; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 1; color: var(--muted); font-family: var(--font-data); font-size: 13px; pointer-events: none; }
+.toggle { font-size: 12px; background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; padding: 3px 8px; cursor: pointer; font-family: var(--font-ui); }
+@media (max-width: 640px) {
+  .console { top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); left: max(10px, env(safe-area-inset-left, 0px));
+    width: auto; right: max(10px, env(safe-area-inset-right, 0px)); max-height: 52%; }
+}
+.console.min > :not(.head) { display: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="view" aria-label="3D view of the room. Drag to look, W A S D to walk."></div>
+<div id="loading">Loading the room…</div>
+
+<section class="console" id="console" aria-label="Listening controls">
+  <div class="head">
+    <div>
+      <h1>VR Room</h1>
+      <p class="sub">Measured AMBEO IRs · 5 × 5 grid · two KRK monitors</p>
+    </div>
+    <button class="toggle" id="minBtn" type="button" aria-expanded="true">Hide</button>
+  </div>
+
+  <div class="row">
+    <button class="play" id="play" type="button" aria-pressed="false">Play</button>
+    <label class="slider" for="vol"><span class="label">Level</span>
+      <input id="vol" type="range" min="-30" max="12" step="1" value="0">
+      <output id="volOut" for="vol">0 dB</output></label>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblMon">Monitors</span>
+    <div class="seg" role="group" aria-labelledby="lblMon" id="feed">
+      <button type="button" data-v="left" aria-pressed="false">Left</button>
+      <button type="button" data-v="right" aria-pressed="false">Right</button>
+      <button type="button" data-v="stereo" aria-pressed="true">Stereo</button>
+      <button type="button" data-v="both" aria-pressed="false">Mono both</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblTrack">Track</span>
+    <div class="seg" role="group" aria-labelledby="lblTrack" id="track">
+      <button type="button" data-v="MalaVida" aria-pressed="true">MalaVida</button>
+      <button type="button" data-v="Mo" aria-pressed="false">Mo</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblBlend">Position</span>
+    <div class="seg" role="group" aria-labelledby="lblBlend" id="blend">
+      <button type="button" data-v="nearest" aria-pressed="true" title="Case A: IR of the nearest measured point">Nearest IR</button>
+      <button type="button" data-v="paper" aria-pressed="false" title="Case B as published: 4 corner IRs, bilinear amplitude weights">4-IR blend</button>
+      <button type="button" data-v="aligned" aria-pressed="false" title="Case B improved: corners time-aligned, tail mixed by energy">4-IR aligned</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <span class="label" id="lblMode">Sound</span>
+    <div class="seg" role="group" aria-labelledby="lblMode" id="mode">
+      <button type="button" data-v="room" aria-pressed="true">Room</button>
+      <button type="button" data-v="dry" aria-pressed="false">Direct only</button>
+    </div>
+  </div>
+
+  <svg id="plan" viewBox="0 0 100 80" role="img" aria-label="Room plan: click to move there"></svg>
+  <div class="readout" id="readout">—</div>
+  <div id="status" role="status" aria-live="polite">Press Play to start. Headphones on.</div>
+
+  <details>
+    <summary>Controls and notes</summary>
+    <p>Drag to look around. W and S (or the up and down arrows) walk, A and D step sideways, Q and E (or left and right arrows) turn. Click a grid point in the room or on the plan to stand there. Space plays or stops.</p>
+    <p>Left or Right plays the mono mix from that monitor only. Stereo sends the left channel to the left monitor and the right channel to the right. Mono both plays the mono mix from both at −3 dB each.</p>
+    <p>The scan is shown at 1.17 × its built size, the scale adopted on 31 Oct 2026. The grid sits 0.5 m further forward than the fit placed it, so the rear row is about 0.5 m off the rear wall. The music is MP3 for this page; the IRs are the converted AmbiX set, 16-bit.</p>
+  </details>
+</section>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { SeatAudio } from "./vr27stereo.js";
+
+// ------------------------------------------------------------------ geometry (acoustic frame: x front, y left, z up)
+const SCALE = 1.17;                               // scan scale adopted 31 Oct 2026
+const ROOM = { x0: -2.51 * SCALE, x1: 2.47 * SCALE, y0: -1.95 * SCALE, y1: 1.95 * SCALE };
+const EYE = 1.5;                                  // mic height
+const BOUND = { x0: ROOM.x0 + 0.25, x1: ROOM.x1 - 0.55, y0: ROOM.y0 + 0.25, y1: ROOM.y1 - 0.25 };
+const tj = (x, y, z) => new THREE.Vector3(x, z, -y);   // acoustic -> three.js
+
+const [mL, mR] = await Promise.all(["S01", "S02"].map((s) => fetch(`audio/manifest_${s}.json`).then((r) => r.json())));
+const SRC = { L: mL.sources[0].position, R: mR.sources[0].position };
+const RECV = mL.receivers;   // engine ids xIyJ: i towards the monitors, j left to right; label = file name
+
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ------------------------------------------------------------------ 3D
+const host = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 50);
+function resize() { const w = host.clientWidth, h = host.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize); resize();
+function setBg() { scene.background = new THREE.Color(css("--bg")); }
+setBg(); matchMedia("(prefers-color-scheme: dark)").addEventListener("change", setBg);
+
+const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+// The model is published as base64 text (artifacts do not serve .glb) and parsed in memory, so the loader
+// never fetches a data: or other URL the page's security policy could refuse.
+(async () => {
+  const msg = document.getElementById("loading");
+  let step = "download";
+  try {
+    const r = await fetch("model/vrroom.glb.b64.txt"); if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    msg.textContent = "Loading the room… unpacking";
+    step = "unpack";
+    const bin = atob((await r.text()).trim()), buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    step = "mesh decoder";
+    await MeshoptDecoder.ready;
+    step = "parse";
+    const g = await loader.parseAsync(buf.buffer, "");
+    g.scene.scale.setScalar(SCALE); scene.add(g.scene);
+    msg.hidden = true;
+  } catch (err) {
+    console.error(err);
+    msg.textContent = `The 3D model did not load (${step}: ${err?.message ?? err}). Audio still works from the plan.`;
+  }
+})();
+
+// grid markers (floor discs) and source markers
+const markers = new THREE.Group(); scene.add(markers);
+const discGeo = new THREE.CircleGeometry(0.09, 24).rotateX(-Math.PI / 2);
+const matIdle = new THREE.MeshBasicMaterial({ color: 0x24508f, transparent: true, opacity: 0.55, depthWrite: false });
+const matOn = new THREE.MeshBasicMaterial({ color: 0xf2c230, transparent: true, opacity: 0.95, depthWrite: false });
+const disc = new Map();
+for (const r of RECV) {
+  const m = new THREE.Mesh(discGeo, matIdle); m.position.copy(tj(r.position[0], r.position[1], 0.012));
+  m.userData.id = r.id; m.renderOrder = 2; markers.add(m); disc.set(r.id, m);
+}
+const ringGeo = new THREE.RingGeometry(0.16, 0.2, 32);
+for (const p of [SRC.L, SRC.R]) {
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xf2c230, side: THREE.DoubleSide, transparent: true, opacity: 0.0 }));
+  ring.position.copy(tj(...p)); ring.lookAt(tj(p[0] - 1, p[1], p[2])); markers.add(ring); ring.userData.src = p === SRC.L ? "L" : "R";
+}
+
+// ------------------------------------------------------------------ listener + navigation
+const start = RECV.find((r) => r.label === "x02y02") ?? RECV[0];
+const me = { x: start.position[0], y: start.position[1], yaw: 0, pitch: -0.05 };   // yaw 0 = facing the monitors (+x)
+const keys = new Set();
+addEventListener("keydown", (e) => {
+  if (e.target.closest?.("input")) return;
+  if (e.code === "Space") { e.preventDefault(); togglePlay(); return; }
+  keys.add(e.code);
+});
+addEventListener("keyup", (e) => keys.delete(e.code));
+let drag = null;
+host.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, yaw: me.yaw, pitch: me.pitch, moved: false }; host.setPointerCapture(e.pointerId); });
+host.addEventListener("pointermove", (e) => {
+  if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 4) drag.moved = true;
+  me.yaw = drag.yaw - dx * 0.004; me.pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + dy * 0.004));
+});
+host.addEventListener("pointerup", (e) => {
+  if (drag && !drag.moved) pick(e);
+  drag = null;
+});
+const ray = new THREE.Raycaster();
+function pick(e) {
+  const r = host.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+  const hit = ray.intersectObjects([...disc.values()])[0];
+  if (hit) goSeat(hit.object.userData.id);
+}
+function goSeat(id) { const r = RECV.find((q) => q.id === id); me.x = r.position[0]; me.y = r.position[1]; rig.seat(id); }
+const clampMe = () => { me.x = Math.min(BOUND.x1, Math.max(BOUND.x0, me.x)); me.y = Math.min(BOUND.y1, Math.max(BOUND.y0, me.y)); };
+
+// ------------------------------------------------------------------ plan inset
+const plan = document.getElementById("plan"), NS = "http://www.w3.org/2000/svg";
+const PW = 100, PH = 80, pad = 6;
+const sx = (PW - 2 * pad) / (ROOM.y1 - ROOM.y0), sy = (PH - 2 * pad) / (ROOM.x1 - ROOM.x0), ps = Math.min(sx, sy);
+const ox = (PW - ps * (ROOM.y1 - ROOM.y0)) / 2, oy = (PH - ps * (ROOM.x1 - ROOM.x0)) / 2;
+const P = (x, y) => [ox + (ROOM.y1 - y) * ps, oy + (ROOM.x1 - x) * ps];   // monitors at the top, left on the left
+const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); plan.appendChild(e); return e; };
+const [rx, ry] = P(ROOM.x1, ROOM.y1);
+el("rect", { x: rx, y: ry, width: (ROOM.y1 - ROOM.y0) * ps, height: (ROOM.x1 - ROOM.x0) * ps, fill: "none", stroke: "var(--muted)", "stroke-width": 0.6 });
+const pd = new Map();
+for (const r of RECV) { const [a, b] = P(r.position[0], r.position[1]); pd.set(r.id, el("circle", { cx: a, cy: b, r: 1.4, fill: "var(--raft)", opacity: 0.6 })); }
+const srcDots = {};
+for (const k of ["L", "R"]) {
+  const [a, b] = P(SRC[k][0], SRC[k][1]);
+  srcDots[k] = el("rect", { x: a - 2.2, y: b - 1.6, width: 4.4, height: 3.2, rx: 0.6, fill: "var(--cone)" });
+  const t = el("text", { x: a, y: b + 6.2, "text-anchor": "middle", "font-size": 3.6, fill: "var(--muted)", "font-family": "IBM Plex Mono, monospace" }); t.textContent = k;
+}
+const meDot = el("circle", { r: 1.9, fill: "var(--cone)", stroke: "var(--ink)", "stroke-width": 0.5 });
+const meDir = el("line", { stroke: "var(--ink)", "stroke-width": 0.7, "stroke-linecap": "round" });
+plan.addEventListener("click", (e) => {
+  const pt = plan.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(plan.getScreenCTM().inverse());
+  me.x = ROOM.x1 - (q.y - oy) / ps; me.y = ROOM.y1 - (q.x - ox) / ps; clampMe();
+});
+
+// ------------------------------------------------------------------ audio rig: two monitors on one clock
+const statusEl = document.getElementById("status");
+const say = (t, err = false) => { statusEl.textContent = t; statusEl.classList.toggle("err", err); };
+const rig = {
+  ctx: null, eng: null, playing: false, t0: 0, feed: "stereo", track: "MalaVida", blend: "nearest", mode: "room", vol: 0,
+  buffers: {}, active: new Set(),
+  async init() {
+    this.ctx = new AudioContext({ latencyHint: "playback" });
+    this.eng = { L: new SeatAudio({ manifest: mL, irBase: "audio/irs/", ctx: this.ctx }),
+                 R: new SeatAudio({ manifest: mR, irBase: "audio/irs/", ctx: this.ctx }) };
+    for (const k of ["L", "R"]) {
+      const e = this.eng[k]; e.onstatus = (t) => say(t, true); e.blend = this.blend; e.mode = this.mode; e.vol = this.vol;
+    }
+    this.eng.L.onweights = (w) => showWeights(w.corners);
+    say("Building the binaural decoder…");
+    await Promise.all([this.eng.L.prepare(), this.eng.R.prepare()]);
+  },
+  async load(track) {
+    if (this.buffers[track]) return this.buffers[track];
+    const names = track === "MalaVida" ? ["P01_MalaVida_L", "P01_MalaVida_R", "P03_MalaVida_Mono"] : ["P02_Mo_L", "P02_Mo_R", "P04_Mo_Mono"];
+    say(`Loading ${track}…`);
+    const bufs = await Promise.all(names.map(async (n) => {
+      const r = await fetch(`audio/${n}.mp3`); if (!r.ok) throw new Error(`${n}.mp3 did not load (${r.status})`);
+      return this.ctx.decodeAudioData(await r.arrayBuffer());
+    }));
+    return (this.buffers[track] = { L: bufs[0], R: bufs[1], M: bufs[2] });
+  },
+  feeds(b) {
+    const g3 = Math.SQRT1_2;
+    return { left: { L: [b.M, 1], R: null }, right: { L: null, R: [b.M, 1] },
+             stereo: { L: [b.L, 1], R: [b.R, 1] }, both: { L: [b.M, g3], R: [b.M, g3] } }[this.feed];
+  },
+  async start() {
+    if (!this.ctx) await this.init();
+    if (this.ctx.state === "suspended") await this.ctx.resume();
+    const b = await this.load(this.track);
+    this.playing = true; this.t0 = this.ctx.currentTime + 0.1; this.route(b, 0);
+    say("Playing");
+  },
+  route(b, offset) {   // (re)start both monitors on the same sample
+    const when = this.ctx.currentTime + 0.08, f = this.feeds(b);
+    this.t0 = when - offset; this.active.clear();
+    for (const k of ["L", "R"]) {
+      if (f[k]) { this.eng[k].play(f[k][0], when, offset, f[k][1]); this.active.add(k); }
+      else this.eng[k].stop(when);
+    }
+    showSources();
+  },
+  async restart() {
+    if (!this.playing) { showSources(); return; }
+    const b = await this.load(this.track);
+    const off = Math.max(0, this.ctx.currentTime - this.t0);
+    this.route(b, this.track === this._lastTrack ? off : 0); this._lastTrack = this.track; say("Playing");
+  },
+  stop() { if (!this.ctx) return; for (const k of ["L", "R"]) this.eng[k].stop(); this.playing = false; this.active.clear(); showSources(); say("Stopped"); },
+  each(fn) { if (this.eng) for (const k of ["L", "R"]) fn(this.eng[k]); },
+  pos(x, y) { this.each((e) => e.setPosition(x, y, EYE)); },
+  seat(id) { this.each((e) => e.setSeat(id)); },
+};
+rig._lastTrack = rig.track;
+
+async function togglePlay() {
+  const b = document.getElementById("play");
+  try {
+    if (rig.playing) { rig.stop(); b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); }
+    else { b.textContent = "Stop"; b.setAttribute("aria-pressed", "true"); await rig.start(); rig.pos(me.x, me.y); }
+  } catch (err) { say(err.message, true); b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); rig.playing = false; }
+}
+document.getElementById("play").addEventListener("click", togglePlay);
+
+function segment(id, fn) {
+  const g = document.getElementById(id);
+  g.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    for (const x of g.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+    fn(b.dataset.v);
+  });
+}
+segment("feed", (v) => { rig.feed = v; rig.restart().catch((e) => say(e.message, true)); });
+segment("track", (v) => { rig.track = v; rig.restart().catch((e) => say(e.message, true)); });
+segment("blend", (v) => { rig.blend = v; rig.each((e) => e.setBlend(v)); });
+segment("mode", (v) => { rig.mode = v; rig.each((e) => e.setMode(v)); });
+const vol = document.getElementById("vol"), volOut = document.getElementById("volOut");
+vol.addEventListener("input", () => { rig.vol = +vol.value; volOut.textContent = `${vol.value > 0 ? "+" : ""}${vol.value} dB`; rig.each((e) => e.setVolume(rig.vol)); });
+document.getElementById("minBtn").addEventListener("click", (e) => {
+  const c = document.getElementById("console"), min = c.classList.toggle("min");
+  e.target.textContent = min ? "Show" : "Hide"; e.target.setAttribute("aria-expanded", String(!min));
+});
+
+function showWeights(corners) {
+  const on = new Map(corners.filter((c) => c.w > 0.001).map((c) => [c.id, c.w]));
+  for (const [id, m] of disc) m.material = on.has(id) ? matOn : matIdle;
+  for (const [id, d] of pd) { const w = on.get(id); d.setAttribute("fill", w ? "var(--cone)" : "var(--raft)"); d.setAttribute("r", w ? 1.4 + 1.4 * w : 1.4); d.setAttribute("opacity", w ? 1 : 0.6); }
+}
+function showSources() {
+  for (const m of markers.children) if (m.userData.src) m.material.opacity = rig.active.has(m.userData.src) ? 0.9 : 0;
+  for (const k of ["L", "R"]) srcDots[k].setAttribute("opacity", rig.active.has(k) || !rig.playing ? 1 : 0.25);
+}
+
+// ------------------------------------------------------------------ frame loop
+const readout = document.getElementById("readout");
+const clock = new THREE.Clock(); let lastSent = "";
+const fwd = new THREE.Vector3(), up = new THREE.Vector3();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05), sp = 1.3 * dt;
+  if (keys.has("KeyQ") || keys.has("ArrowLeft")) me.yaw -= 1.6 * dt;
+  if (keys.has("KeyE") || keys.has("ArrowRight")) me.yaw += 1.6 * dt;
+  // yaw > 0 turns right (towards acoustic -y). forward = (cos, -sin), right = (-sin, -cos)
+  const c = Math.cos(me.yaw), s = Math.sin(me.yaw);
+  let mv = 0, st = 0;
+  if (keys.has("KeyW") || keys.has("ArrowUp")) mv += 1;
+  if (keys.has("KeyS") || keys.has("ArrowDown")) mv -= 1;
+  if (keys.has("KeyD")) st += 1;
+  if (keys.has("KeyA")) st -= 1;
+  if (mv || st) { me.x += (c * mv - s * st) * sp; me.y += (-s * mv - c * st) * sp; clampMe(); }
+  camera.position.copy(tj(me.x, me.y, EYE));
+  const dir = tj(Math.cos(me.yaw) * Math.cos(me.pitch), -Math.sin(me.yaw) * Math.cos(me.pitch), Math.sin(me.pitch));
+  camera.lookAt(camera.position.clone().add(dir));
+  renderer.render(scene, camera);
+  const key = `${me.x.toFixed(3)},${me.y.toFixed(3)}`;
+  if (key !== lastSent) { lastSent = key; rig.pos(me.x, me.y); updateReadout(); }
+  camera.getWorldDirection(fwd); up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  rig.each((e) => e.setOrientation(fwd, up));
+  const [a, b] = P(me.x, me.y); meDot.setAttribute("cx", a); meDot.setAttribute("cy", b);
+  meDir.setAttribute("x1", a); meDir.setAttribute("y1", b);
+  meDir.setAttribute("x2", a + Math.sin(me.yaw) * 5); meDir.setAttribute("y2", b - Math.cos(me.yaw) * 5);
+});
+function updateReadout() {
+  let best = RECV[0], bd = Infinity;
+  for (const r of RECV) { const d = Math.hypot(r.position[0] - me.x, r.position[1] - me.y); if (d < bd) { bd = d; best = r; } }
+  const dL = Math.hypot(SRC.L[0] - me.x, SRC.L[1] - me.y, SRC.L[2] - EYE), dR = Math.hypot(SRC.R[0] - me.x, SRC.R[1] - me.y, SRC.R[2] - EYE);
+  readout.innerHTML = `Nearest point <b>${best.label}</b> (${bd.toFixed(2)} m)<br>To L <b>${dL.toFixed(2)} m</b> · to R <b>${dR.toFixed(2)} m</b>`;
+}
+updateReadout();
+</script>

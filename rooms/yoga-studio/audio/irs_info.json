@@ -1,0 +1,10 @@
+{
+ "scale": 0.9695229190371815,
+ "lengths_s": {
+  "SCN01_NoTreatment": 1.68,
+  "SCN02_Curtains": 1.32,
+  "SCN03_Curtains_Ceiling": 0.57,
+  "SCN04_Curtains_Ceiling_Walls": 0.53
+ },
+ "fs": 32000
+}
