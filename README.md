@@ -1,6 +1,6 @@
 # E-LAB VR27 Listening Rooms
 
-A static website with six interactive rooms from E-LAB's VR27 auralisation tool. Each room is a 3D model in the
+A static website with seven interactive rooms from E-LAB's VR27 auralisation tool. Each room is a 3D model in the
 browser with measured or simulated ambisonic room impulse responses on a grid of listening points. Visitors walk
 around, switch acoustic treatments and hear the difference on headphones.
 
@@ -9,6 +9,7 @@ Live site (once Pages is on): https://little-noizes.github.io/vr27-rooms/
 | Room | Folder | IRs | What you can switch |
 |---|---|---|---|
 | Yoga Studio | `rooms/yoga-studio` | Simulated (Treble), 2nd order, 38 points, 3 sources | 4 treatments, L/R speakers, music and voice levels |
+| Operating Theatre | `rooms/operating-theatre` | Simulated (Treble), 2nd order played at 1st, 36 points, 8 sources (6 baked into two FOA loop beds, 2 live) | Plasterboard or Bioguard ceiling, 5 events, source levels |
 | Boardroom | `rooms/boardroom` | Simulated, 1st order, 110 points | Curtain off/on, speech or music |
 | Classroom | `rooms/classroom` | Measured (existing) and simulated (acoustic ceiling), 130 points | Ceiling option, LAP |
 | VR Room | `rooms/vr-room` | Measured, 25 points, 2 monitors | Left, right, stereo, mono |
@@ -55,6 +56,10 @@ then open http://localhost:8000/ in Chrome or Edge. Pages must be served over ht
 ## Publish
 
 Public repo with GitHub Pages from the `main` branch root. No Git LFS: Pages does not serve LFS files. `.nojekyll`
-keeps Pages from processing the files. Total size is about 540 MB.
+keeps Pages from processing the files. Total size is about 710 MB (Operating Theatre adds about 170 MB).
 
 © 2026 E-LAB Consulting
+
+## Operating Theatre notes
+
+Not packed with `tools/pack_room.py`: its packs (`audio/packs`, 6 IRs each) and baked beds (`audio/beds/<bed>/<scenario>/<Rnn>.opus`, 4-channel Ogg Opus) are written by `projects/07 OperTheatre/03_Build/build_web.py`. The model is the Charité scan by Digital Surgery (CC BY-NC 4.0), published with their permission; keep the attribution on the room page and the landing page.

@@ -1,0 +1,27 @@
+{
+ "loop_s": 20.0,
+ "fs": 32000,
+ "scale": 0.25,
+ "format": "Ogg Opus, 4 ch FOA ACN/SN3D (mapping family 255)",
+ "path": "beds/{bed}/{scenario}/{receiver}.opus",
+ "scenarios": [
+  "SCN01_Plasterboard",
+  "SCN02_BioguardAcoustic"
+ ],
+ "beds": {
+  "equipment": {
+   "sources": [
+    "S01",
+    "S02",
+    "S03"
+   ]
+  },
+  "staff": {
+   "sources": [
+    "S05a",
+    "S05b",
+    "S05c"
+   ]
+  }
+ }
+}
